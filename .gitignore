@@ -1,18 +1,119 @@
-# --- PYTHON ---
+# =============================================================
+#  PYTHON / BACKEND
+# =============================================================
 venv/
 .venv/
+env/
 __pycache__/
-*.pyc
-.env
+*.py[cod]
+*$py.class
+*.so
+.Python
 
-# --- ANDROID / GRADLE ---
-.gradle/
+# Pakowanie i dystrybucja
 build/
-app/build/
+dist/
+*.egg
+*.egg-info/
+.eggs/
+
+# Testy i pokrycie
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Linters / type checkers
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+
+# Konfiguracje środowiskowe (sekrety!)
+.env
+.env.*
+!.env.example
+
+# Lokalne bazy SQLite (np. herd.db generowane przez backend)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+*.sqlite3-journal
+
+# =============================================================
+#  ANDROID / KOTLIN / GRADLE
+# =============================================================
+.gradle/
+**/build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Artefakty build
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+
+# Pliki lokalne / sekrety
+local.properties
+keystore.properties
+*.jks
+*.keystore
+google-services.json
+
+# Crash & profiling
+*.hprof
+
+# =============================================================
+#  IDE / EDYTORY
+# =============================================================
 .idea/
 *.iml
-local.properties
-.DS_Store
+*.ipr
+*.iws
+.vscode/
+*.swp
+*.swo
+*~
 
-# --- INNE ---
+# =============================================================
+#  LATEX
+# =============================================================
+*.aux
 *.log
+*.toc
+*.out
+*.lof
+*.lot
+*.synctex.gz
+*.synctex(busy)
+*.fls
+*.fdb_latexmk
+*.bbl
+*.blg
+*.bcf
+*.run.xml
+*.nav
+*.snm
+*.vrb
+*.xdv
+docs/*.pdf
+
+# =============================================================
+#  SYSTEM OPERACYJNY
+# =============================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# =============================================================
+#  INNE
+# =============================================================
+*.bak
+*.tmp
