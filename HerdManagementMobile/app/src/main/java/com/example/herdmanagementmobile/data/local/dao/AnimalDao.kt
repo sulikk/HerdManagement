@@ -14,6 +14,9 @@ interface AnimalDao {
     fun observeAll(): Flow<List<AnimalEntity>>
 
     @Query("SELECT * FROM animals WHERE id = :id")
+    fun observeById(id: Long): Flow<AnimalEntity?>
+
+    @Query("SELECT * FROM animals WHERE id = :id")
     suspend fun getById(id: Long): AnimalEntity?
 
     @Query("SELECT * FROM animals WHERE earTag = :earTag LIMIT 1")

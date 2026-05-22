@@ -15,6 +15,9 @@ class AnimalRepository @Inject constructor(
     fun observeAnimals(): Flow<List<Animal>> =
         animalDao.observeAll().map { list -> list.map(AnimalEntity::toDomain) }
 
+    fun observeById(id: Long): Flow<Animal?> =
+        animalDao.observeById(id).map { it?.toDomain() }
+
     suspend fun getById(id: Long): Animal? = animalDao.getById(id)?.toDomain()
 
     suspend fun getByEarTag(earTag: String): Animal? = animalDao.getByEarTag(earTag)?.toDomain()
