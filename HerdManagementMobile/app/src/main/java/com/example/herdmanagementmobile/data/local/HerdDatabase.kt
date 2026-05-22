@@ -5,6 +5,7 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import com.example.herdmanagementmobile.data.local.dao.AnimalDao
 import com.example.herdmanagementmobile.data.local.dao.EventDao
+import com.example.herdmanagementmobile.data.local.dao.TreatmentDao
 import com.example.herdmanagementmobile.data.local.entity.AnimalEntity
 import com.example.herdmanagementmobile.data.local.entity.EventEntity
 import com.example.herdmanagementmobile.data.local.entity.ListingEntity
@@ -28,6 +29,7 @@ import com.example.herdmanagementmobile.data.local.entity.TreatmentEntity
 abstract class HerdDatabase : RoomDatabase() {
     abstract fun animalDao(): AnimalDao
     abstract fun eventDao(): EventDao
+    abstract fun treatmentDao(): TreatmentDao
 
     companion object {
         const val DATABASE_NAME = "herd.db"

@@ -19,9 +19,16 @@ sealed class Route(val path: String) {
         fun build(animalId: Long): String = "animals/$animalId/events/new"
     }
 
+    data object TreatmentForm : Route("animals/{animalId}/treatments/new") {
+        const val ARG_ANIMAL = "animalId"
+        fun build(animalId: Long): String = "animals/$animalId/treatments/new"
+    }
+
     data object Scanner : Route("scanner") {
         const val RESULT_EAR_TAG = "scanned_ear_tag"
     }
+
+    data object Nfc : Route("nfc")
 
     data object Assistant : Route("assistant")
     data object Listings : Route("listings")

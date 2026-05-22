@@ -10,9 +10,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Row
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
@@ -53,6 +55,7 @@ fun AnimalFormScreen(
     onSaved: () -> Unit,
     onCancel: () -> Unit,
     onScanClick: () -> Unit,
+    onNfcClick: () -> Unit,
     scannedEarTag: String?,
     onScanResultConsumed: () -> Unit,
     viewModel: AnimalFormViewModel = hiltViewModel(),
@@ -95,16 +98,21 @@ fun AnimalFormScreen(
                 supportingText = { Text(state.earTagError ?: "Format: PL + 12 cyfr") },
                 isError = state.earTagError != null,
                 singleLine = true,
-                trailingIcon = {
-                    IconButton(onClick = onScanClick) {
-                        Icon(
-                            imageVector = Icons.Default.QrCodeScanner,
-                            contentDescription = "Skanuj kolczyk",
-                        )
-                    }
-                },
                 modifier = Modifier.fillMaxWidth(),
             )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onScanClick, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.QrCodeScanner, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Skanuj kod")
+                }
+                OutlinedButton(onClick = onNfcClick, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.Nfc, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("NFC")
+                }
+            }
 
             OutlinedTextField(
                 value = state.name,

@@ -5,8 +5,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.herdmanagementmobile.data.repository.AnimalRepository
 import com.example.herdmanagementmobile.data.repository.EventRepository
+import com.example.herdmanagementmobile.data.repository.TreatmentRepository
 import com.example.herdmanagementmobile.domain.model.Animal
 import com.example.herdmanagementmobile.domain.model.AnimalEvent
+import com.example.herdmanagementmobile.domain.model.Treatment
 import com.example.herdmanagementmobile.ui.navigation.Route
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -20,6 +22,7 @@ data class AnimalDetailState(
     val isLoading: Boolean = true,
     val animal: Animal? = null,
     val events: List<AnimalEvent> = emptyList(),
+    val treatments: List<Treatment> = emptyList(),
 )
 
 @HiltViewModel
@@ -27,6 +30,7 @@ class AnimalDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val animalRepository: AnimalRepository,
     eventRepository: EventRepository,
+    treatmentRepository: TreatmentRepository,
 ) : ViewModel() {
 
     val animalId: Long = savedStateHandle.get<Long>(Route.AnimalDetail.ARG) ?: -1L
@@ -34,8 +38,14 @@ class AnimalDetailViewModel @Inject constructor(
     val state: StateFlow<AnimalDetailState> = combine(
         animalRepository.observeById(animalId),
         eventRepository.observeForAnimal(animalId),
-    ) { animal, events ->
-        AnimalDetailState(isLoading = false, animal = animal, events = events)
+        treatmentRepository.observeForAnimal(animalId),
+    ) { animal, events, treatments ->
+        AnimalDetailState(
+            isLoading = false,
+            animal = animal,
+            events = events,
+            treatments = treatments,
+        )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),

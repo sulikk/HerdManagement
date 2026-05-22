@@ -13,7 +13,9 @@ import com.example.herdmanagementmobile.ui.screens.animals.AnimalDetailScreen
 import com.example.herdmanagementmobile.ui.screens.animals.AnimalFormScreen
 import com.example.herdmanagementmobile.ui.screens.animals.AnimalListScreen
 import com.example.herdmanagementmobile.ui.screens.events.EventFormScreen
+import com.example.herdmanagementmobile.ui.screens.nfc.NfcScreen
 import com.example.herdmanagementmobile.ui.screens.scanner.ScannerScreen
+import com.example.herdmanagementmobile.ui.screens.treatments.TreatmentFormScreen
 
 @Composable
 fun HerdNavHost(
@@ -49,6 +51,9 @@ fun HerdNavHost(
                 onAddEvent = { animalId ->
                     navController.navigate(Route.EventForm.build(animalId))
                 },
+                onAddTreatment = { animalId ->
+                    navController.navigate(Route.TreatmentForm.build(animalId))
+                },
                 onDeleted = {
                     navController.popBackStack(Route.AnimalList.path, inclusive = false)
                 },
@@ -73,6 +78,7 @@ fun HerdNavHost(
                     entry.savedStateHandle[Route.Scanner.RESULT_EAR_TAG] = null
                 },
                 onScanClick = { navController.navigate(Route.Scanner.path) },
+                onNfcClick = { navController.navigate(Route.Nfc.path) },
                 onSaved = { navController.popBackStack() },
                 onCancel = { navController.popBackStack() },
             )
@@ -88,8 +94,30 @@ fun HerdNavHost(
                 onCancel = { navController.popBackStack() },
             )
         }
+        composable(
+            route = Route.TreatmentForm.path,
+            arguments = listOf(
+                navArgument(Route.TreatmentForm.ARG_ANIMAL) { type = NavType.LongType },
+            ),
+        ) {
+            TreatmentFormScreen(
+                onSaved = { navController.popBackStack() },
+                onCancel = { navController.popBackStack() },
+            )
+        }
         composable(Route.Scanner.path) {
             ScannerScreen(
+                onScanned = { earTag ->
+                    navController.previousBackStackEntry
+                        ?.savedStateHandle
+                        ?.set(Route.Scanner.RESULT_EAR_TAG, earTag)
+                    navController.popBackStack()
+                },
+                onCancel = { navController.popBackStack() },
+            )
+        }
+        composable(Route.Nfc.path) {
+            NfcScreen(
                 onScanned = { earTag ->
                     navController.previousBackStackEntry
                         ?.savedStateHandle

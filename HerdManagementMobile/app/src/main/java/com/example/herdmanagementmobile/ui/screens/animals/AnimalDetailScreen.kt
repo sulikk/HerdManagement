@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -18,7 +19,6 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -43,6 +43,8 @@ import com.example.herdmanagementmobile.domain.model.AnimalEvent
 import com.example.herdmanagementmobile.domain.model.EventType
 import com.example.herdmanagementmobile.domain.model.IrzStatus
 import com.example.herdmanagementmobile.domain.model.Sex
+import com.example.herdmanagementmobile.domain.model.Treatment
+import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -51,6 +53,7 @@ fun AnimalDetailScreen(
     onBack: () -> Unit,
     onEdit: (Long) -> Unit,
     onAddEvent: (Long) -> Unit,
+    onAddTreatment: (Long) -> Unit,
     onDeleted: () -> Unit,
     viewModel: AnimalDetailViewModel = hiltViewModel(),
 ) {
@@ -78,15 +81,6 @@ fun AnimalDetailScreen(
                 },
             )
         },
-        floatingActionButton = {
-            state.animal?.let { animal ->
-                ExtendedFloatingActionButton(
-                    onClick = { onAddEvent(animal.id) },
-                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                    text = { Text("Zdarzenie") },
-                )
-            }
-        },
     ) { padding ->
         Box(
             modifier = Modifier
@@ -103,7 +97,13 @@ fun AnimalDetailScreen(
                     modifier = Modifier.align(Alignment.Center),
                 )
 
-                else -> AnimalDetailContent(animal = state.animal!!, events = state.events)
+                else -> AnimalDetailContent(
+                    animal = state.animal!!,
+                    events = state.events,
+                    treatments = state.treatments,
+                    onAddEvent = onAddEvent,
+                    onAddTreatment = onAddTreatment,
+                )
             }
         }
     }
@@ -129,7 +129,13 @@ fun AnimalDetailScreen(
 }
 
 @Composable
-private fun AnimalDetailContent(animal: Animal, events: List<AnimalEvent>) {
+private fun AnimalDetailContent(
+    animal: Animal,
+    events: List<AnimalEvent>,
+    treatments: List<Treatment>,
+    onAddEvent: (Long) -> Unit,
+    onAddTreatment: (Long) -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -156,17 +162,48 @@ private fun AnimalDetailContent(animal: Animal, events: List<AnimalEvent>) {
 
         HorizontalDivider()
 
-        Text("Zdarzenia", style = MaterialTheme.typography.titleMedium)
+        SectionHeader(title = "Zdarzenia", onAddClick = { onAddEvent(animal.id) })
         if (events.isEmpty()) {
-            Text(
-                text = "Brak zarejestrowanych zdarzeń. Kliknij \"Zdarzenie\", aby dodać pierwsze.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            EmptySectionHint("Brak zarejestrowanych zdarzeń.")
         } else {
             events.forEach { EventRow(it) }
         }
+
+        HorizontalDivider()
+
+        SectionHeader(title = "Leczenia", onAddClick = { onAddTreatment(animal.id) })
+        if (treatments.isEmpty()) {
+            EmptySectionHint("Brak zarejestrowanych leczeń.")
+        } else {
+            treatments.forEach { TreatmentRow(it) }
+        }
     }
+}
+
+@Composable
+private fun SectionHeader(title: String, onAddClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f),
+        )
+        IconButton(onClick = onAddClick) {
+            Icon(Icons.Default.Add, contentDescription = "Dodaj $title")
+        }
+    }
+}
+
+@Composable
+private fun EmptySectionHint(text: String) {
+    Text(
+        text = text,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodyMedium,
+    )
 }
 
 @Composable
@@ -194,9 +231,56 @@ private fun EventRow(event: AnimalEvent) {
                 labelColor = event.irzStatus.color(),
             ),
         )
-        event.notes?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall)
+        event.notes?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        HorizontalDivider()
+    }
+}
+
+@Composable
+private fun TreatmentRow(treatment: Treatment) {
+    val today = LocalDate.now()
+    val inWithdrawal = treatment.withdrawalUntil?.isAfter(today) == true
+
+    Column(
+        modifier = Modifier.padding(vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = treatment.drug,
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = treatment.treatmentDate.format(DateTimeFormatter.ISO_LOCAL_DATE),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
+        treatment.dose?.let { Text("Dawka: $it", style = MaterialTheme.typography.bodySmall) }
+        treatment.vet?.let { Text("Lek. wet.: $it", style = MaterialTheme.typography.bodySmall) }
+        treatment.withdrawalUntil?.let { until ->
+            AssistChip(
+                onClick = {},
+                label = {
+                    Text(
+                        if (inWithdrawal) {
+                            "Karencja do ${until.format(DateTimeFormatter.ISO_LOCAL_DATE)}"
+                        } else {
+                            "Karencja zakończona"
+                        },
+                    )
+                },
+                colors = AssistChipDefaults.assistChipColors(
+                    labelColor = if (inWithdrawal) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                ),
+            )
+        }
+        treatment.notes?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         HorizontalDivider()
     }
 }

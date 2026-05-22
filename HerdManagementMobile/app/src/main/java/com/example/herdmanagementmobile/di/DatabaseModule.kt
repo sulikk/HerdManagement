@@ -5,6 +5,7 @@ import androidx.room.Room
 import com.example.herdmanagementmobile.data.local.HerdDatabase
 import com.example.herdmanagementmobile.data.local.dao.AnimalDao
 import com.example.herdmanagementmobile.data.local.dao.EventDao
+import com.example.herdmanagementmobile.data.local.dao.TreatmentDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -28,4 +29,7 @@ object DatabaseModule {
 
     @Provides
     fun provideEventDao(db: HerdDatabase): EventDao = db.eventDao()
+
+    @Provides
+    fun provideTreatmentDao(db: HerdDatabase): TreatmentDao = db.treatmentDao()
 }
