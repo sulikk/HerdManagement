@@ -4,14 +4,21 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.EventAvailable
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -33,12 +40,27 @@ import com.example.herdmanagementmobile.domain.model.Animal
 fun AnimalListScreen(
     onAnimalClick: (Long) -> Unit,
     onAddClick: () -> Unit,
+    onComplianceClick: () -> Unit,
     viewModel: AnimalListViewModel = hiltViewModel(),
 ) {
     val animals by viewModel.animals.collectAsState()
+    val pendingSync by viewModel.pendingSyncCount.collectAsState()
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Stado") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text("Stado") },
+                actions = {
+                    SyncStatusChip(pendingCount = pendingSync)
+                    IconButton(onClick = onComplianceClick) {
+                        Icon(
+                            Icons.Default.EventAvailable,
+                            contentDescription = "Zgodność z IRZ",
+                        )
+                    }
+                },
+            )
+        },
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = onAddClick,
@@ -71,6 +93,26 @@ fun AnimalListScreen(
             }
         }
     }
+}
+
+@Composable
+private fun SyncStatusChip(pendingCount: Int) {
+    val synced = pendingCount == 0
+    AssistChip(
+        onClick = {},
+        enabled = false,
+        label = {
+            Text(if (synced) "Zsynchronizowano" else "Do wysłania: $pendingCount")
+        },
+        leadingIcon = {
+            Icon(
+                imageVector = if (synced) Icons.Default.CloudDone else Icons.Default.CloudSync,
+                contentDescription = null,
+                modifier = Modifier.size(AssistChipDefaults.IconSize),
+            )
+        },
+        modifier = Modifier.padding(end = 8.dp),
+    )
 }
 
 @Composable

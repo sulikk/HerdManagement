@@ -44,6 +44,25 @@ class EventRead(EventBase):
     created_at: datetime
 
 
+class TreatmentBase(BaseModel):
+    animal_id: int
+    drug: str = Field(min_length=1, max_length=128)
+    dose: str | None = None
+    vet: str | None = None
+    treatment_date: date
+    withdrawal_until: date | None = None
+    notes: str | None = None
+
+
+class TreatmentCreate(TreatmentBase):
+    pass
+
+
+class TreatmentRead(TreatmentBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+
+
 class MeasurementBase(BaseModel):
     animal_id: int
     type: MeasurementType

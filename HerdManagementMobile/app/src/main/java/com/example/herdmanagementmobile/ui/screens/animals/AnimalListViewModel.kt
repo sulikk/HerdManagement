@@ -3,6 +3,7 @@ package com.example.herdmanagementmobile.ui.screens.animals
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.herdmanagementmobile.data.repository.AnimalRepository
+import com.example.herdmanagementmobile.data.sync.SyncManager
 import com.example.herdmanagementmobile.domain.model.Animal
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -13,7 +14,12 @@ import javax.inject.Inject
 @HiltViewModel
 class AnimalListViewModel @Inject constructor(
     repository: AnimalRepository,
+    syncManager: SyncManager,
 ) : ViewModel() {
     val animals: StateFlow<List<Animal>> = repository.observeAnimals()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Liczba operacji czekających na wysłanie do backendu (kolejka synchronizacji). */
+    val pendingSyncCount: StateFlow<Int> = syncManager.observePendingCount()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 }

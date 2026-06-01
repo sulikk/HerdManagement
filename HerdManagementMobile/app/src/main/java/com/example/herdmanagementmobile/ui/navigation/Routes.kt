@@ -30,6 +30,8 @@ sealed class Route(val path: String) {
 
     data object Nfc : Route("nfc")
 
+    data object Compliance : Route("compliance")
+
     data object Assistant : Route("assistant")
     data object Listings : Route("listings")
 }
