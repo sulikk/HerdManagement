@@ -94,6 +94,24 @@ fun EventFormScreen(
                 Text(text = state.eventDate.format(DateTimeFormatter.ISO_LOCAL_DATE))
             }
 
+            if (state.requiresPartner) {
+                val label = if (state.type == EventType.ARRIVAL) {
+                    "Siedziba, z której przybyło *"
+                } else {
+                    "Siedziba, do której ubyło *"
+                }
+                OutlinedTextField(
+                    value = state.partnerHolding,
+                    onValueChange = viewModel::onPartnerHoldingChange,
+                    label = { Text(label) },
+                    placeholder = { Text("PL000111222") },
+                    supportingText = { Text(state.partnerError ?: "Format: PL + 9 cyfr") },
+                    isError = state.partnerError != null,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
             OutlinedTextField(
                 value = state.notes,
                 onValueChange = viewModel::onNotesChange,

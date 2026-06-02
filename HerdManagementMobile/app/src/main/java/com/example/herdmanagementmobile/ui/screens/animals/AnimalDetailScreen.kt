@@ -231,6 +231,22 @@ private fun EventRow(event: AnimalEvent) {
                 labelColor = event.irzStatus.color(),
             ),
         )
+        event.irzDocumentNumber?.let {
+            Text(
+                text = "Nr dokumentu IRZ: $it",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        if (event.irzStatus == IrzStatus.REJECTED) {
+            event.irzMessage?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
         event.notes?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         HorizontalDivider()
     }

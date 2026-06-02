@@ -15,6 +15,7 @@ data class EventDto(
     val type: String,
     @SerialName("event_date") val eventDate: String,
     val notes: String? = null,
+    @SerialName("partner_holding_number") val partnerHoldingNumber: String? = null,
     @SerialName("irz_status") val irzStatus: String = "pending",
     @SerialName("irz_submitted_at") val irzSubmittedAt: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
@@ -26,6 +27,7 @@ fun EventDto.toDomain(): AnimalEvent = AnimalEvent(
     type = EventType.valueOf(type.uppercase()),
     eventDate = LocalDate.parse(eventDate),
     notes = notes,
+    partnerHoldingNumber = partnerHoldingNumber,
     irzStatus = IrzStatus.valueOf(irzStatus.uppercase()),
     irzSubmittedAt = irzSubmittedAt?.let { LocalDateTime.parse(it) },
 )
@@ -36,6 +38,7 @@ fun AnimalEvent.toDto(): EventDto = EventDto(
     type = type.name.lowercase(),
     eventDate = eventDate.toString(),
     notes = notes,
+    partnerHoldingNumber = partnerHoldingNumber,
     irzStatus = irzStatus.name.lowercase(),
     irzSubmittedAt = irzSubmittedAt?.toString(),
 )

@@ -16,4 +16,5 @@ data class ComplianceEventRow(
     val type: EventType,
     val eventDate: LocalDate,
     val irzStatus: IrzStatus,
+    val irzMessage: String? = null,
 )

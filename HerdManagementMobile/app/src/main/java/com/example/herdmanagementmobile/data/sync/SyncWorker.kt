@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.example.herdmanagementmobile.data.local.dao.AnimalDao
 import com.example.herdmanagementmobile.data.local.dao.EventDao
 import com.example.herdmanagementmobile.data.local.dao.SyncDao
 import com.example.herdmanagementmobile.data.local.entity.IdMappingEntity
@@ -12,6 +13,8 @@ import com.example.herdmanagementmobile.data.remote.HerdApiService
 import com.example.herdmanagementmobile.data.remote.dto.AnimalDto
 import com.example.herdmanagementmobile.data.remote.dto.EventDto
 import com.example.herdmanagementmobile.data.remote.dto.TreatmentDto
+import com.example.herdmanagementmobile.data.remote.dto.toDomain
+import com.example.herdmanagementmobile.data.remote.irzplus.IrzplusClient
 import com.example.herdmanagementmobile.domain.model.IrzStatus
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -21,10 +24,11 @@ import retrofit2.HttpException
 import java.time.LocalDateTime
 
 /**
- * Drenuje kolejkę synchronizacji (FIFO) i wysyła operacje do backendu.
- * Mapuje lokalne id zwierząt na zdalne, aby rekordy zależne (zdarzenia, leczenia)
- * trafiały pod właściwe zwierzę. Wpisy bez spełnionej zależności zostają PENDING
- * i powodują ponowienie zadania.
+ * Drenuje kolejkę synchronizacji (FIFO):
+ * - zwierzęta i leczenia trafiają do backendu aplikacji (z mapowaniem lokalne id -> zdalne),
+ * - zdarzenia są zgłaszane do Portalu IRZplus, a ich [IrzStatus] jest aktualizowany
+ *   na CONFIRMED (przyjęto, nadano numer dokumentu) lub REJECTED (błędy walidacji).
+ * Wpisy z zależnością jeszcze niespełnioną zostają PENDING i powodują ponowienie.
  */
 @HiltWorker
 class SyncWorker @AssistedInject constructor(
@@ -32,7 +36,9 @@ class SyncWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val syncDao: SyncDao,
     private val eventDao: EventDao,
+    private val animalDao: AnimalDao,
     private val api: HerdApiService,
+    private val irzplus: IrzplusClient,
     private val json: Json,
 ) : CoroutineWorker(context, params) {
 
@@ -83,12 +89,23 @@ class SyncWorker @AssistedInject constructor(
 
     private suspend fun pushEvent(entry: SyncQueueEntity): Outcome {
         val dto = json.decodeFromString<EventDto>(entry.payload)
-        val remoteAnimalId = syncDao.remoteIdFor(SyncContract.Entity.ANIMAL, dto.animalId)
-            ?: return Outcome.RETRY // zwierzę jeszcze niezsynchronizowane — spróbuj później
-        val created = api.createEvent(remoteAnimalId, dto.copy(animalId = remoteAnimalId))
-        syncDao.putMapping(IdMappingEntity(SyncContract.Entity.EVENT, dto.id, created.id))
-        eventDao.updateIrzStatus(dto.id, IrzStatus.SUBMITTED.name)
-        return Outcome.DONE
+        val animal = animalDao.getById(dto.animalId)?.toDomain()
+            ?: return Outcome.RETRY // zwierzę zniknęło lokalnie — spróbuj później
+        val event = dto.toDomain()
+
+        val response = irzplus.zglosZdarzenie(event, animal)
+        val accepted = response.numerDokumentu != null && response.bledy.isEmpty()
+        val status = if (accepted) IrzStatus.CONFIRMED else IrzStatus.REJECTED
+        val message = if (accepted) {
+            response.komunikat.ifBlank { "Przyjęto przez IRZplus." }
+        } else {
+            // Złóż czytelny powód odrzucenia z komunikatu i opisów błędów walidacji.
+            val powody = response.bledy.joinToString("; ") { it.opis }
+            listOf(response.komunikat, powody).filter { it.isNotBlank() }.joinToString(" ")
+                .ifBlank { "Zgłoszenie odrzucone przez IRZplus." }
+        }
+        eventDao.updateIrzResult(dto.id, status.name, message, response.numerDokumentu)
+        return Outcome.DONE // odrzucenie walidacyjne nie naprawi się przez ponawianie
     }
 
     private suspend fun pushTreatment(entry: SyncQueueEntity): Outcome {

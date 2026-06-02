@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import init_db
+from app.irzplus.router import router as irzplus_router
 from app.routers import animals, events, health, treatments
 
 
@@ -33,3 +34,4 @@ app.include_router(health.router)
 app.include_router(animals.router)
 app.include_router(events.router)
 app.include_router(treatments.router)
+app.include_router(irzplus_router)

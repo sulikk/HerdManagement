@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.EventAvailable
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,6 +42,7 @@ fun AnimalListScreen(
     onAnimalClick: (Long) -> Unit,
     onAddClick: () -> Unit,
     onComplianceClick: () -> Unit,
+    onSettingsClick: () -> Unit,
     viewModel: AnimalListViewModel = hiltViewModel(),
 ) {
     val animals by viewModel.animals.collectAsState()
@@ -56,6 +58,12 @@ fun AnimalListScreen(
                         Icon(
                             Icons.Default.EventAvailable,
                             contentDescription = "Zgodność z IRZ",
+                        )
+                    }
+                    IconButton(onClick = onSettingsClick) {
+                        Icon(
+                            Icons.Default.Settings,
+                            contentDescription = "Ustawienia gospodarstwa",
                         )
                     }
                 },

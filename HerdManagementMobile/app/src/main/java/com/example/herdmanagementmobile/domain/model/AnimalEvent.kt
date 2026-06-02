@@ -13,6 +13,10 @@ data class AnimalEvent(
     val type: EventType,
     val eventDate: LocalDate,
     val notes: String? = null,
+    /** Numer siedziby partnera: skąd przybyło (przybycie) / dokąd ubyło (ubycie). */
+    val partnerHoldingNumber: String? = null,
     val irzStatus: IrzStatus = IrzStatus.PENDING,
     val irzSubmittedAt: LocalDateTime? = null,
+    val irzMessage: String? = null,
+    val irzDocumentNumber: String? = null,
 )

@@ -28,8 +28,11 @@ data class EventEntity(
     val type: EventType,
     val eventDate: LocalDate,
     val notes: String?,
+    val partnerHoldingNumber: String? = null,
     val irzStatus: IrzStatus,
     val irzSubmittedAt: LocalDateTime?,
+    val irzMessage: String? = null,
+    val irzDocumentNumber: String? = null,
 ) {
     fun toDomain(): AnimalEvent = AnimalEvent(
         id = id,
@@ -37,7 +40,10 @@ data class EventEntity(
         type = type,
         eventDate = eventDate,
         notes = notes,
+        partnerHoldingNumber = partnerHoldingNumber,
         irzStatus = irzStatus,
         irzSubmittedAt = irzSubmittedAt,
+        irzMessage = irzMessage,
+        irzDocumentNumber = irzDocumentNumber,
     )
 }

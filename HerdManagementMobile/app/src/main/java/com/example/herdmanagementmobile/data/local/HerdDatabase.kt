@@ -25,7 +25,7 @@ import com.example.herdmanagementmobile.data.local.entity.TreatmentEntity
         SyncQueueEntity::class,
         IdMappingEntity::class,
     ],
-    version = 2,
+    version = 4,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)

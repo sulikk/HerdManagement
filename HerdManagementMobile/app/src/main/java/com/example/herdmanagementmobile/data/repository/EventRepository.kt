@@ -33,6 +33,7 @@ class EventRepository @Inject constructor(
                     type = row.type,
                     eventDate = row.eventDate,
                     irzStatus = row.irzStatus,
+                    irzMessage = row.irzMessage,
                 )
             }
         }
@@ -45,6 +46,7 @@ class EventRepository @Inject constructor(
                 type = event.type,
                 eventDate = event.eventDate,
                 notes = event.notes,
+                partnerHoldingNumber = event.partnerHoldingNumber,
                 irzStatus = event.irzStatus,
                 irzSubmittedAt = event.irzSubmittedAt,
             ),

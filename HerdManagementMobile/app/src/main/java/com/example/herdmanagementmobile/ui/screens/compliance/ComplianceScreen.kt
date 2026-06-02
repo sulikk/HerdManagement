@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.herdmanagementmobile.domain.model.ComplianceItem
 import com.example.herdmanagementmobile.domain.model.EventType
+import com.example.herdmanagementmobile.domain.model.IrzStatus
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -148,6 +149,15 @@ private fun ComplianceRow(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+        if (item.irzStatus == IrzStatus.REJECTED) {
+            item.irzMessage?.let {
+                Text(
+                    text = "Odrzucono przez IRZ: $it",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
     }
 }

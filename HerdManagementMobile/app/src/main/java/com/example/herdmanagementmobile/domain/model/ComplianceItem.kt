@@ -15,6 +15,7 @@ data class ComplianceItem(
     val type: EventType,
     val eventDate: LocalDate,
     val irzStatus: IrzStatus,
+    val irzMessage: String? = null,
 ) {
     /** Termin zgłoszenia: data zdarzenia + 7 dni (art. ustawy o systemie IRZ). */
     val deadline: LocalDate get() = eventDate.plusDays(REPORTING_DAYS)

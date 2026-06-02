@@ -130,7 +130,15 @@ fun AnimalFormScreen(
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = state.birthDate?.format(DateTimeFormatter.ISO_LOCAL_DATE)
-                        ?: "Data urodzenia (opcjonalnie)",
+                        ?: "Data urodzenia *",
+                )
+            }
+            state.birthDateError?.let { err ->
+                Text(
+                    text = err,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(start = 16.dp),
                 )
             }
 
@@ -169,7 +177,10 @@ fun AnimalFormScreen(
             OutlinedTextField(
                 value = state.herdId,
                 onValueChange = viewModel::onHerdIdChange,
-                label = { Text("ID siedziby stada") },
+                label = { Text("Numer siedziby stada") },
+                placeholder = { Text("PL000111222") },
+                supportingText = { Text(state.herdIdError ?: "Format: PL + 9 cyfr (domyślny z ustawień)") },
+                isError = state.herdIdError != null,
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )

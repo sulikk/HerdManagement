@@ -32,6 +32,8 @@ sealed class Route(val path: String) {
 
     data object Compliance : Route("compliance")
 
+    data object Settings : Route("settings")
+
     data object Assistant : Route("assistant")
     data object Listings : Route("listings")
 }

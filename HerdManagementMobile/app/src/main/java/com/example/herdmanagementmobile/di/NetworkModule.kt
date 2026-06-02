@@ -2,6 +2,7 @@ package com.example.herdmanagementmobile.di
 
 import com.example.herdmanagementmobile.BuildConfig
 import com.example.herdmanagementmobile.data.remote.HerdApiService
+import com.example.herdmanagementmobile.data.remote.irzplus.IrzplusApiService
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import dagger.Module
 import dagger.Provides
@@ -64,4 +65,9 @@ object NetworkModule {
     @Singleton
     fun provideHerdApiService(retrofit: Retrofit): HerdApiService =
         retrofit.create(HerdApiService::class.java)
+
+    @Provides
+    @Singleton
+    fun provideIrzplusApiService(retrofit: Retrofit): IrzplusApiService =
+        retrofit.create(IrzplusApiService::class.java)
 }
