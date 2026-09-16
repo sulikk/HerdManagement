@@ -5,6 +5,7 @@ import com.example.herdmanagementmobile.data.local.entity.EventEntity
 import com.example.herdmanagementmobile.data.sync.SyncManager
 import com.example.herdmanagementmobile.domain.model.AnimalEvent
 import com.example.herdmanagementmobile.domain.model.ComplianceItem
+import com.example.herdmanagementmobile.domain.model.IrzStatus
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -38,7 +39,11 @@ class EventRepository @Inject constructor(
             }
         }
 
-    suspend fun add(event: AnimalEvent): Long {
+    /**
+     * Zapisuje zdarzenie lokalnie i kolejkuje jego zapis w backendzie.
+     * [submitToIrz] = true tylko wtedy, gdy użytkownik jawnie potwierdził zgłoszenie (wymaganie F12).
+     */
+    suspend fun add(event: AnimalEvent, submitToIrz: Boolean): Long {
         val id = eventDao.insert(
             EventEntity(
                 id = event.id,
@@ -47,11 +52,24 @@ class EventRepository @Inject constructor(
                 eventDate = event.eventDate,
                 notes = event.notes,
                 partnerHoldingNumber = event.partnerHoldingNumber,
-                irzStatus = event.irzStatus,
-                irzSubmittedAt = event.irzSubmittedAt,
+                irzStatus = IrzStatus.PENDING,
+                irzSubmittedAt = null,
             ),
         )
-        syncManager.enqueueEventCreate(event.copy(id = id))
+        syncManager.enqueueEventCreate(event.copy(id = id, irzStatus = IrzStatus.PENDING))
+        if (submitToIrz) submitToIrz(id)
         return id
+    }
+
+    /** Zgłoszenie zdarzenia do IRZplus — wołać wyłącznie po potwierdzeniu przez użytkownika. */
+    suspend fun submitToIrz(eventId: Long) {
+        eventDao.updateIrzResult(
+            id = eventId,
+            status = IrzStatus.SUBMITTED.name,
+            message = null,
+            documentNumber = null,
+            submittedAt = null,
+        )
+        syncManager.enqueueIrzSubmit(eventId)
     }
 }

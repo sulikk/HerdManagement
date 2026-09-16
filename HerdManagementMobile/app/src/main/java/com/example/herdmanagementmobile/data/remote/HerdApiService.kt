@@ -5,7 +5,9 @@ import com.example.herdmanagementmobile.data.remote.dto.EventDto
 import com.example.herdmanagementmobile.data.remote.dto.TreatmentDto
 import retrofit2.http.Body
 import retrofit2.http.DELETE
+import com.example.herdmanagementmobile.data.remote.dto.IrzResultDto
 import retrofit2.http.GET
+import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
@@ -39,6 +41,9 @@ interface HerdApiService {
         @Path("animalId") animalId: Long,
         @Body body: EventDto,
     ): EventDto
+
+    @PATCH("events/{id}/irz")
+    suspend fun updateEventIrz(@Path("id") id: Long, @Body body: IrzResultDto): EventDto
 
     @DELETE("events/{id}")
     suspend fun deleteEvent(@Path("id") id: Long)

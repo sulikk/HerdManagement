@@ -59,6 +59,18 @@ def create_event(db: Session, data: schemas.EventCreate) -> models.Event:
     return event
 
 
+def get_event(db: Session, event_id: int) -> models.Event | None:
+    return db.get(models.Event, event_id)
+
+
+def update_event_irz(db: Session, event: models.Event, data: schemas.IrzResult) -> models.Event:
+    for field, value in data.model_dump().items():
+        setattr(event, field, value)
+    db.commit()
+    db.refresh(event)
+    return event
+
+
 def delete_event(db: Session, event_id: int) -> bool:
     event = db.get(models.Event, event_id)
     if event is None:

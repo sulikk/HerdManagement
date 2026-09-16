@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.EventAvailable
 import androidx.compose.material.icons.filled.Settings
@@ -48,14 +49,14 @@ fun AnimalListScreen(
     viewModel: AnimalListViewModel = hiltViewModel(),
 ) {
     val animals by viewModel.animals.collectAsState()
-    val pendingSync by viewModel.pendingSyncCount.collectAsState()
+    val syncStatus by viewModel.syncStatus.collectAsState()
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Stado") },
                 actions = {
-                    SyncStatusChip(pendingCount = pendingSync)
+                    SyncStatusChip(status = syncStatus, onClick = viewModel::syncNow)
                     IconButton(onClick = onStatisticsClick) {
                         Icon(
                             Icons.Default.BarChart,
@@ -111,21 +112,31 @@ fun AnimalListScreen(
     }
 }
 
+/** Stan synchronizacji; kliknięcie = „Synchronizuj teraz” (ponawia też nieudane wpisy). */
 @Composable
-private fun SyncStatusChip(pendingCount: Int) {
-    val synced = pendingCount == 0
+private fun SyncStatusChip(status: SyncStatus, onClick: () -> Unit) {
+    val (label, icon) = when {
+        status.failed > 0 -> "Błędy: ${status.failed}" to Icons.Default.CloudOff
+        status.pending > 0 -> "Do wysłania: ${status.pending}" to Icons.Default.CloudSync
+        else -> "Zsynchronizowano" to Icons.Default.CloudDone
+    }
     AssistChip(
-        onClick = {},
-        enabled = false,
-        label = {
-            Text(if (synced) "Zsynchronizowano" else "Do wysłania: $pendingCount")
-        },
+        onClick = onClick,
+        label = { Text(label) },
         leadingIcon = {
             Icon(
-                imageVector = if (synced) Icons.Default.CloudDone else Icons.Default.CloudSync,
+                imageVector = icon,
                 contentDescription = null,
                 modifier = Modifier.size(AssistChipDefaults.IconSize),
             )
+        },
+        colors = if (status.failed > 0) {
+            AssistChipDefaults.assistChipColors(
+                labelColor = MaterialTheme.colorScheme.error,
+                leadingIconContentColor = MaterialTheme.colorScheme.error,
+            )
+        } else {
+            AssistChipDefaults.assistChipColors()
         },
         modifier = Modifier.padding(end = 8.dp),
     )

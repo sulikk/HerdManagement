@@ -29,7 +29,7 @@ data class AnimalDetailState(
 class AnimalDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val animalRepository: AnimalRepository,
-    eventRepository: EventRepository,
+    private val eventRepository: EventRepository,
     treatmentRepository: TreatmentRepository,
 ) : ViewModel() {
 
@@ -51,6 +51,11 @@ class AnimalDetailViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = AnimalDetailState(),
     )
+
+    /** Wywoływane po potwierdzeniu w dialogu — zgłasza zdarzenie do IRZplus. */
+    fun submitToIrz(eventId: Long) {
+        viewModelScope.launch { eventRepository.submitToIrz(eventId) }
+    }
 
     fun delete(onDone: () -> Unit) {
         if (animalId <= 0) return

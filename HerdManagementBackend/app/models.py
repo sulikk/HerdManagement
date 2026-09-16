@@ -65,8 +65,12 @@ class Event(Base):
     type: Mapped[EventType] = mapped_column(SAEnum(EventType))
     event_date: Mapped[date] = mapped_column(Date)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Siedziba partnera: skąd przybyło (przybycie) / dokąd ubyło (ubycie).
+    partner_holding_number: Mapped[str | None] = mapped_column(String(16), nullable=True)
     irz_status: Mapped[IrzStatus] = mapped_column(SAEnum(IrzStatus), default=IrzStatus.PENDING)
     irz_submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    irz_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    irz_document_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     animal: Mapped[Animal] = relationship(back_populates="events")

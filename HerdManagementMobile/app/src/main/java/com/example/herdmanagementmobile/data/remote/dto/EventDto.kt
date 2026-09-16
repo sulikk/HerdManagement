@@ -18,7 +18,18 @@ data class EventDto(
     @SerialName("partner_holding_number") val partnerHoldingNumber: String? = null,
     @SerialName("irz_status") val irzStatus: String = "pending",
     @SerialName("irz_submitted_at") val irzSubmittedAt: String? = null,
+    @SerialName("irz_message") val irzMessage: String? = null,
+    @SerialName("irz_document_number") val irzDocumentNumber: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
+)
+
+/** Body dla PATCH /events/{id}/irz. */
+@Serializable
+data class IrzResultDto(
+    @SerialName("irz_status") val irzStatus: String,
+    @SerialName("irz_submitted_at") val irzSubmittedAt: String? = null,
+    @SerialName("irz_message") val irzMessage: String? = null,
+    @SerialName("irz_document_number") val irzDocumentNumber: String? = null,
 )
 
 fun EventDto.toDomain(): AnimalEvent = AnimalEvent(
@@ -30,6 +41,8 @@ fun EventDto.toDomain(): AnimalEvent = AnimalEvent(
     partnerHoldingNumber = partnerHoldingNumber,
     irzStatus = IrzStatus.valueOf(irzStatus.uppercase()),
     irzSubmittedAt = irzSubmittedAt?.let { LocalDateTime.parse(it) },
+    irzMessage = irzMessage,
+    irzDocumentNumber = irzDocumentNumber,
 )
 
 fun AnimalEvent.toDto(): EventDto = EventDto(
@@ -41,4 +54,13 @@ fun AnimalEvent.toDto(): EventDto = EventDto(
     partnerHoldingNumber = partnerHoldingNumber,
     irzStatus = irzStatus.name.lowercase(),
     irzSubmittedAt = irzSubmittedAt?.toString(),
+    irzMessage = irzMessage,
+    irzDocumentNumber = irzDocumentNumber,
+)
+
+fun AnimalEvent.toIrzResultDto(): IrzResultDto = IrzResultDto(
+    irzStatus = irzStatus.name.lowercase(),
+    irzSubmittedAt = irzSubmittedAt?.toString(),
+    irzMessage = irzMessage,
+    irzDocumentNumber = irzDocumentNumber,
 )

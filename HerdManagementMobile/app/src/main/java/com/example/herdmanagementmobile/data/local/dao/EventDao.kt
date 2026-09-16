@@ -19,14 +19,23 @@ interface EventDao {
     @Query("SELECT * FROM events WHERE irzStatus = 'PENDING' ORDER BY eventDate")
     fun observePending(): Flow<List<EventEntity>>
 
+    @Query("SELECT * FROM events WHERE id = :id")
+    suspend fun getById(id: Long): EventEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(event: EventEntity): Long
 
     @Query(
         "UPDATE events SET irzStatus = :status, irzMessage = :message, " +
-            "irzDocumentNumber = :documentNumber WHERE id = :id",
+            "irzDocumentNumber = :documentNumber, irzSubmittedAt = :submittedAt WHERE id = :id",
     )
-    suspend fun updateIrzResult(id: Long, status: String, message: String?, documentNumber: String?)
+    suspend fun updateIrzResult(
+        id: Long,
+        status: String,
+        message: String?,
+        documentNumber: String?,
+        submittedAt: String?,
+    )
 
     /** Zdarzenia jeszcze niepotwierdzone przez IRZplus — kandydaci do widoku zgodności. */
     @Query(

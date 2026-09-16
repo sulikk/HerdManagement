@@ -24,7 +24,7 @@ object NetworkModule {
      * Bazowy adres backendu. 10.0.2.2 to host maszyny widziany z emulatora Androida.
      * Na fizycznym telefonie ustaw IP komputera w sieci LAN (np. http://192.168.0.10:8000/).
      */
-    private const val BASE_URL = "http://192.168.0.132:8000/"
+    private const val BASE_URL = "http://192.168.1.120:8000/"
 
     @Provides
     @Singleton

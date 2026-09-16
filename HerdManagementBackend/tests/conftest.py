@@ -12,8 +12,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app import models  # noqa: F401  rejestracja modeli w Base.metadata
-from app.database import Base, get_db
+from app.database import get_db, init_db
 from app.irzplus import router as irzplus_router
 from app.irzplus.service import IrzplusStore
 from main import app
@@ -38,7 +37,7 @@ def client(irz_store: IrzplusStore) -> Iterator[TestClient]:
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Base.metadata.create_all(bind=engine)
+    init_db(engine)
     testing_session = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
     def override_get_db() -> Iterator[Session]:

@@ -53,6 +53,7 @@ fun EventFormScreen(
 ) {
     val state by viewModel.state.collectAsState()
     var showDatePicker by remember { mutableStateOf(false) }
+    var showSubmitDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -127,13 +128,34 @@ fun EventFormScreen(
             Spacer(Modifier.height(8.dp))
 
             Button(
-                onClick = { viewModel.save(onSaved) },
+                onClick = { if (viewModel.validate()) showSubmitDialog = true },
                 enabled = !state.isSaving,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("Zapisz zdarzenie")
             }
         }
+    }
+
+    if (showSubmitDialog) {
+        IrzSubmitDialog(
+            title = "Zgłosić do IRZplus?",
+            description = "${state.type.label()} z dnia " +
+                "${state.eventDate.format(DateTimeFormatter.ISO_LOCAL_DATE)} zostanie zapisane " +
+                "i zgłoszone do systemu ARiMR (IRZplus). Zgłoszenia nie można cofnąć z poziomu aplikacji.\n\n" +
+                "Możesz też tylko zapisać zdarzenie i zgłosić je później z karty zwierzęcia.",
+            confirmLabel = "Zapisz i zgłoś",
+            onConfirm = {
+                showSubmitDialog = false
+                viewModel.save(submitToIrz = true, onSuccess = onSaved)
+            },
+            secondaryLabel = "Tylko zapisz",
+            onSecondary = {
+                showSubmitDialog = false
+                viewModel.save(submitToIrz = false, onSuccess = onSaved)
+            },
+            onDismiss = { showSubmitDialog = false },
+        )
     }
 
     if (showDatePicker) {

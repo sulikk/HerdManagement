@@ -22,6 +22,19 @@ interface SyncDao {
     @Query("SELECT COUNT(*) FROM sync_queue WHERE status = 'PENDING'")
     fun observePendingCount(): Flow<Int>
 
+    @Query("SELECT COUNT(*) FROM sync_queue WHERE status = 'FAILED' AND operation != 'IRZ_SUBMIT'")
+    fun observeFailedCount(): Flow<Int>
+
+    /**
+     * Ręczne ponowienie nieudanych wpisów. Zgłoszenia do IRZ są pomijane — po porażce
+     * wracają do stanu „Nie zgłoszono” i wymagają ponownego potwierdzenia użytkownika.
+     */
+    @Query(
+        "UPDATE sync_queue SET status = 'PENDING', retries = 0, updatedAt = :updatedAt " +
+            "WHERE status = 'FAILED' AND operation != 'IRZ_SUBMIT'",
+    )
+    suspend fun resetFailed(updatedAt: String): Int
+
     @Query(
         "UPDATE sync_queue SET status = :status, retries = :retries, " +
             "lastError = :error, updatedAt = :updatedAt WHERE id = :id",

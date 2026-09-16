@@ -25,22 +25,30 @@ class AnimalRead(AnimalBase):
     created_at: datetime
 
 
+class IrzResult(BaseModel):
+    """Stan zgłoszenia zdarzenia do IRZplus — ustala aplikacja mobilna po odpowiedzi IRZ."""
+
+    irz_status: IrzStatus = IrzStatus.PENDING
+    irz_submitted_at: datetime | None = None
+    irz_message: str | None = None
+    irz_document_number: str | None = None
+
+
 class EventBase(BaseModel):
     animal_id: int
     type: EventType
     event_date: date
     notes: str | None = None
+    partner_holding_number: str | None = None
 
 
-class EventCreate(EventBase):
+class EventCreate(EventBase, IrzResult):
     pass
 
 
-class EventRead(EventBase):
+class EventRead(EventBase, IrzResult):
     model_config = ConfigDict(from_attributes=True)
     id: int
-    irz_status: IrzStatus
-    irz_submitted_at: datetime | None = None
     created_at: datetime
 
 

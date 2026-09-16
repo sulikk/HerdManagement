@@ -150,14 +150,25 @@ private fun ComplianceRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        if (item.irzStatus == IrzStatus.REJECTED) {
-            item.irzMessage?.let {
+        when (item.irzStatus) {
+            IrzStatus.REJECTED -> item.irzMessage?.let {
                 Text(
                     text = "Odrzucono przez IRZ: $it",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
             }
+            IrzStatus.PENDING -> Text(
+                text = "Nie zgłoszono — otwórz kartę zwierzęcia, aby zgłosić.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            IrzStatus.SUBMITTED -> Text(
+                text = "Wysyłanie do IRZplus…",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            IrzStatus.CONFIRMED -> Unit
         }
     }
 }

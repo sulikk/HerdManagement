@@ -128,6 +128,48 @@ class TestZdarzenia:
 
         assert client.post(f"/animals/{zwierze['id']}/events", json=body).status_code == 422
 
+    def test_zdarzenie_z_siedziba_partnera_i_wynikiem_irz(self, client: TestClient):
+        zwierze = utworz_zwierze(client)
+        body = {
+            "animal_id": zwierze["id"], "type": "departure", "event_date": "2024-05-01",
+            "partner_holding_number": "PL000333444",
+            "irz_status": "confirmed", "irz_document_number": "UBYC/2024/000001",
+        }
+
+        created = client.post(f"/animals/{zwierze['id']}/events", json=body).json()
+
+        assert created["partner_holding_number"] == "PL000333444"
+        assert created["irz_status"] == "confirmed"
+        assert created["irz_document_number"] == "UBYC/2024/000001"
+
+    def test_zapis_wyniku_irz(self, client: TestClient):
+        zwierze = utworz_zwierze(client)
+        body = {"animal_id": zwierze["id"], "type": "birth", "event_date": "2024-03-10"}
+        zdarzenie = client.post(f"/animals/{zwierze['id']}/events", json=body).json()
+
+        response = client.patch(f"/events/{zdarzenie['id']}/irz", json={
+            "irz_status": "rejected",
+            "irz_message": "Zgłoszenie urodzenia bydła wymaga numeru matki.",
+            "irz_submitted_at": "2024-03-11T08:00:00",
+        })
+
+        assert response.status_code == 200
+        zapisane = client.get(f"/animals/{zwierze['id']}/events").json()[0]
+        assert zapisane["irz_status"] == "rejected"
+        assert "numeru matki" in zapisane["irz_message"]
+        assert zapisane["irz_document_number"] is None
+        assert zapisane["irz_submitted_at"].startswith("2024-03-11T08:00:00")
+
+    def test_zapis_wyniku_irz_nieznanego_zdarzenia_zwraca_404(self, client: TestClient):
+        assert client.patch("/events/999/irz", json={"irz_status": "confirmed"}).status_code == 404
+
+    def test_nieznany_status_irz_zwraca_422(self, client: TestClient):
+        zwierze = utworz_zwierze(client)
+        body = {"animal_id": zwierze["id"], "type": "birth", "event_date": "2024-03-10"}
+        zdarzenie = client.post(f"/animals/{zwierze['id']}/events", json=body).json()
+
+        assert client.patch(f"/events/{zdarzenie['id']}/irz", json={"irz_status": "maybe"}).status_code == 422
+
     def test_usun_zdarzenie(self, client: TestClient):
         zwierze = utworz_zwierze(client)
         body = {"animal_id": zwierze["id"], "type": "death", "event_date": "2024-05-01"}

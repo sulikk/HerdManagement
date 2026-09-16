@@ -48,17 +48,24 @@ class EventFormViewModel @Inject constructor(
     fun onPartnerHoldingChange(value: String) =
         _state.update { it.copy(partnerHolding = value.uppercase(), partnerError = null) }
 
-    fun save(onSuccess: () -> Unit) {
-        if (animalId <= 0) return
+    /** Sprawdza formularz przed pokazaniem pytania o zgłoszenie do IRZ. */
+    fun validate(): Boolean {
+        if (animalId <= 0) return false
         val s = _state.value
-
         if (s.requiresPartner && !HoldingNumber.isValidHolding(s.partnerHolding)) {
             val label = if (s.type == EventType.ARRIVAL) "z której zwierzę przybyło" else "do której zwierzę ubyło"
             _state.update {
                 it.copy(partnerError = "Podaj numer siedziby, $label (PL + 9 cyfr).")
             }
-            return
+            return false
         }
+        return true
+    }
+
+    /** [submitToIrz] — użytkownik potwierdził w dialogu zgłoszenie do IRZplus. */
+    fun save(submitToIrz: Boolean, onSuccess: () -> Unit) {
+        if (!validate()) return
+        val s = _state.value
 
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true, saveError = null) }
@@ -72,6 +79,7 @@ class EventFormViewModel @Inject constructor(
                         partnerHoldingNumber = s.partnerHolding.ifBlank { null }
                             .takeIf { s.requiresPartner },
                     ),
+                    submitToIrz = submitToIrz,
                 )
                 onSuccess()
             } catch (e: Exception) {

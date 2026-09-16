@@ -30,6 +30,15 @@ def create_event(animal_id: int, payload: schemas.EventCreate, db: Session = Dep
     return crud.create_event(db, payload)
 
 
+@router.patch("/events/{event_id}/irz", response_model=schemas.EventRead)
+def update_event_irz(event_id: int, payload: schemas.IrzResult, db: Session = Depends(get_db)):
+    """Zapis wyniku zgłoszenia do IRZplus (zgłoszenie wykonuje aplikacja po potwierdzeniu użytkownika)."""
+    event = crud.get_event(db, event_id)
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    return crud.update_event_irz(db, event, payload)
+
+
 @router.delete("/events/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_event(event_id: int, db: Session = Depends(get_db)):
     if not crud.delete_event(db, event_id):

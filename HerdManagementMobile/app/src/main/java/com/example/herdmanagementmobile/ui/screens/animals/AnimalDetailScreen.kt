@@ -44,6 +44,7 @@ import com.example.herdmanagementmobile.domain.model.EventType
 import com.example.herdmanagementmobile.domain.model.IrzStatus
 import com.example.herdmanagementmobile.domain.model.Sex
 import com.example.herdmanagementmobile.domain.model.Treatment
+import com.example.herdmanagementmobile.ui.screens.events.IrzSubmitDialog
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -59,6 +60,7 @@ fun AnimalDetailScreen(
 ) {
     val state by viewModel.state.collectAsState()
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var eventToSubmit by remember { mutableStateOf<AnimalEvent?>(null) }
 
     Scaffold(
         topBar = {
@@ -103,9 +105,28 @@ fun AnimalDetailScreen(
                     treatments = state.treatments,
                     onAddEvent = onAddEvent,
                     onAddTreatment = onAddTreatment,
+                    onSubmitToIrz = { event -> eventToSubmit = event },
                 )
             }
         }
+    }
+
+    eventToSubmit?.let { event ->
+        val retry = event.irzStatus == IrzStatus.REJECTED
+        IrzSubmitDialog(
+            title = if (retry) "Zgłosić ponownie do IRZplus?" else "Zgłosić do IRZplus?",
+            description = "${event.type.label()} z dnia " +
+                "${event.eventDate.format(DateTimeFormatter.ISO_LOCAL_DATE)} " +
+                "(${state.animal?.earTag.orEmpty()}) zostanie zgłoszone do systemu ARiMR (IRZplus). " +
+                "Zgłoszenia nie można cofnąć z poziomu aplikacji." +
+                if (retry) "\n\nUpewnij się, że poprawiono dane wskazane w powodzie odrzucenia." else "",
+            confirmLabel = "Zgłoś",
+            onConfirm = {
+                viewModel.submitToIrz(event.id)
+                eventToSubmit = null
+            },
+            onDismiss = { eventToSubmit = null },
+        )
     }
 
     if (showDeleteDialog) {
@@ -135,6 +156,7 @@ private fun AnimalDetailContent(
     treatments: List<Treatment>,
     onAddEvent: (Long) -> Unit,
     onAddTreatment: (Long) -> Unit,
+    onSubmitToIrz: (AnimalEvent) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -166,7 +188,7 @@ private fun AnimalDetailContent(
         if (events.isEmpty()) {
             EmptySectionHint("Brak zarejestrowanych zdarzeń.")
         } else {
-            events.forEach { EventRow(it) }
+            events.forEach { event -> EventRow(event, onSubmitToIrz = { onSubmitToIrz(event) }) }
         }
 
         HorizontalDivider()
@@ -207,7 +229,7 @@ private fun EmptySectionHint(text: String) {
 }
 
 @Composable
-private fun EventRow(event: AnimalEvent) {
+private fun EventRow(event: AnimalEvent, onSubmitToIrz: () -> Unit) {
     Column(
         modifier = Modifier.padding(vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -224,13 +246,32 @@ private fun EventRow(event: AnimalEvent) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        AssistChip(
-            onClick = {},
-            label = { Text(event.irzStatus.label()) },
-            colors = AssistChipDefaults.assistChipColors(
-                labelColor = event.irzStatus.color(),
-            ),
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            AssistChip(
+                onClick = {},
+                label = { Text(event.irzStatus.label()) },
+                colors = AssistChipDefaults.assistChipColors(
+                    labelColor = event.irzStatus.color(),
+                ),
+            )
+            when (event.irzStatus) {
+                IrzStatus.PENDING -> TextButton(onClick = onSubmitToIrz) { Text("Zgłoś do IRZplus") }
+                IrzStatus.REJECTED -> TextButton(onClick = onSubmitToIrz) { Text("Zgłoś ponownie") }
+                IrzStatus.SUBMITTED, IrzStatus.CONFIRMED -> Unit
+            }
+        }
+        if (event.irzStatus == IrzStatus.PENDING) {
+            event.irzMessage?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
         event.irzDocumentNumber?.let {
             Text(
                 text = "Nr dokumentu IRZ: $it",
@@ -327,8 +368,8 @@ private fun EventType.label(): String = when (this) {
 }
 
 private fun IrzStatus.label(): String = when (this) {
-    IrzStatus.PENDING -> "Oczekuje na zgłoszenie"
-    IrzStatus.SUBMITTED -> "Wysłano do IRZplus"
+    IrzStatus.PENDING -> "Nie zgłoszono"
+    IrzStatus.SUBMITTED -> "Wysyłanie do IRZplus…"
     IrzStatus.CONFIRMED -> "Potwierdzono"
     IrzStatus.REJECTED -> "Odrzucono"
 }

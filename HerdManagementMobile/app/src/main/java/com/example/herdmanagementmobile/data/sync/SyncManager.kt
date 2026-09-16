@@ -1,7 +1,6 @@
 package com.example.herdmanagementmobile.data.sync
 
 import android.content.Context
-import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
@@ -15,6 +14,7 @@ import com.example.herdmanagementmobile.domain.model.AnimalEvent
 import com.example.herdmanagementmobile.domain.model.Treatment
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.time.Duration
@@ -25,6 +25,13 @@ import javax.inject.Singleton
 /**
  * Dodaje operacje do kolejki synchronizacji i planuje uruchomienie [SyncWorker].
  * Repozytoria wołają enqueue* zaraz po zapisie lokalnym (offline-first).
+ *
+ * Dwa niezależne zadania WorkManagera:
+ * - [SyncContract.UNIQUE_WORK_NAME] — natychmiastowa synchronizacja po każdej zmianie,
+ * - [SyncContract.RETRY_WORK_NAME] — opóźnione ponowienie wpisów, które się nie powiodły.
+ * Dzięki temu nowe zmiany nie czekają w kolejce za zadaniem odczekującym backoff.
+ * Oba uruchamiają ten sam [SyncWorker]; [mutex] gwarantuje, że kolejka jest drenowana
+ * tylko przez jeden worker naraz.
  */
 @Singleton
 class SyncManager @Inject constructor(
@@ -32,7 +39,11 @@ class SyncManager @Inject constructor(
     private val syncDao: SyncDao,
     private val json: Json,
 ) {
+    val mutex = Mutex()
+
     fun observePendingCount(): Flow<Int> = syncDao.observePendingCount()
+
+    fun observeFailedCount(): Flow<Int> = syncDao.observeFailedCount()
 
     suspend fun enqueueAnimalCreate(animal: Animal) {
         enqueue(SyncContract.Entity.ANIMAL, SyncContract.Operation.CREATE, json.encodeToString(animal.toDto()))
@@ -43,11 +54,21 @@ class SyncManager @Inject constructor(
     }
 
     suspend fun enqueueAnimalDelete(localId: Long) {
-        enqueue(SyncContract.Entity.ANIMAL, SyncContract.Operation.DELETE, json.encodeToString(DeletePayload(localId)))
+        enqueue(SyncContract.Entity.ANIMAL, SyncContract.Operation.DELETE, json.encodeToString(LocalIdPayload(localId)))
     }
 
+    /** Zapis zdarzenia w backendzie aplikacji (bez zgłaszania do IRZplus). */
     suspend fun enqueueEventCreate(event: AnimalEvent) {
         enqueue(SyncContract.Entity.EVENT, SyncContract.Operation.CREATE, json.encodeToString(event.toDto()))
+    }
+
+    /** Zgłoszenie zdarzenia do IRZplus — wołać wyłącznie po jawnym potwierdzeniu użytkownika. */
+    suspend fun enqueueIrzSubmit(eventId: Long) {
+        enqueue(SyncContract.Entity.EVENT, SyncContract.Operation.IRZ_SUBMIT, json.encodeToString(LocalIdPayload(eventId)))
+    }
+
+    suspend fun enqueueIrzResult(eventId: Long) {
+        enqueue(SyncContract.Entity.EVENT, SyncContract.Operation.IRZ_RESULT, json.encodeToString(LocalIdPayload(eventId)))
     }
 
     suspend fun enqueueTreatmentCreate(treatment: Treatment) {
@@ -55,7 +76,13 @@ class SyncManager @Inject constructor(
     }
 
     suspend fun enqueueTreatmentDelete(localId: Long) {
-        enqueue(SyncContract.Entity.TREATMENT, SyncContract.Operation.DELETE, json.encodeToString(DeletePayload(localId)))
+        enqueue(SyncContract.Entity.TREATMENT, SyncContract.Operation.DELETE, json.encodeToString(LocalIdPayload(localId)))
+    }
+
+    /** Tryb manualnej synchronizacji: ponawia nieudane wpisy i uruchamia sync od razu. */
+    suspend fun syncNow() {
+        syncDao.resetFailed(LocalDateTime.now().toString())
+        scheduleSync()
     }
 
     private suspend fun enqueue(entity: String, operation: String, payload: String) {
@@ -73,21 +100,35 @@ class SyncManager @Inject constructor(
         scheduleSync()
     }
 
-    /** Uruchamia jednorazowe zadanie synchronizacji przy dostępnej sieci. */
+    /**
+     * Uruchamia synchronizację przy dostępnej sieci. APPEND_OR_REPLACE: jeśli worker
+     * właśnie pracuje, nowe uruchomienie wykona się zaraz po nim (bez utraty zmian).
+     */
     fun scheduleSync() {
         val request = OneTimeWorkRequestBuilder<SyncWorker>()
-            .setConstraints(
-                Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
-                    .build(),
-            )
-            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, Duration.ofSeconds(30))
+            .setConstraints(networkConstraint())
             .build()
-
         WorkManager.getInstance(context).enqueueUniqueWork(
             SyncContract.UNIQUE_WORK_NAME,
             ExistingWorkPolicy.APPEND_OR_REPLACE,
             request,
         )
     }
+
+    /** Planuje ponowienie za [delay]; kolejne wywołanie zastępuje poprzednie planowanie. */
+    fun scheduleRetry(delay: Duration) {
+        val request = OneTimeWorkRequestBuilder<SyncWorker>()
+            .setConstraints(networkConstraint())
+            .setInitialDelay(delay)
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            SyncContract.RETRY_WORK_NAME,
+            ExistingWorkPolicy.REPLACE,
+            request,
+        )
+    }
+
+    private fun networkConstraint() = Constraints.Builder()
+        .setRequiredNetworkType(NetworkType.CONNECTED)
+        .build()
 }
