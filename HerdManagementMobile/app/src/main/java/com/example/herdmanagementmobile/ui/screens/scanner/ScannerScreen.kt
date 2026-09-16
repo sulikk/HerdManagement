@@ -190,7 +190,8 @@ private fun CameraPreviewView(onBarcode: (String) -> Unit) {
                             processFrame(scanner, imageProxy) { raw ->
                                 if (!detected) {
                                     val parsed = EarTag.parseBarcode(raw)
-                                    if (parsed != null) {
+                                    // Zła cyfra kontrolna = najpewniej błędny odczyt klatki — skanujemy dalej.
+                                    if (parsed != null && EarTag.hasValidCheckDigit(parsed)) {
                                         detected = true
                                         onBarcode(parsed)
                                     }

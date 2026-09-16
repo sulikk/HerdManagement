@@ -90,7 +90,11 @@ class AnimalFormViewModel @Inject constructor(
     fun save(onSuccess: () -> Unit) {
         val s = _state.value
         if (!EarTag.isValidFormat(s.earTag)) {
-            _state.update { it.copy(earTagError = "Format: PL + 12 cyfr (np. PL000123456789)") }
+            _state.update { it.copy(earTagError = "Format: PL + 12 cyfr (np. PL000123456784)") }
+            return
+        }
+        if (!EarTag.hasValidCheckDigit(s.earTag)) {
+            _state.update { it.copy(earTagError = "Nieprawidłowa cyfra kontrolna — sprawdź numer z kolczyka.") }
             return
         }
         if (s.birthDate == null) {
@@ -103,6 +107,10 @@ class AnimalFormViewModel @Inject constructor(
         }
         if (s.motherEarTag.isNotBlank() && !EarTag.isValidFormat(s.motherEarTag)) {
             _state.update { it.copy(saveError = "Kolczyk matki ma zły format (PL + 12 cyfr).") }
+            return
+        }
+        if (s.motherEarTag.isNotBlank() && !EarTag.hasValidCheckDigit(s.motherEarTag)) {
+            _state.update { it.copy(saveError = "Kolczyk matki ma nieprawidłową cyfrę kontrolną.") }
             return
         }
         if (s.herdId.isNotBlank() && !HoldingNumber.isValidHolding(s.herdId)) {

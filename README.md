@@ -49,6 +49,13 @@ pip install -r requirements.txt    # po utworzeniu pliku
 uvicorn main:app --reload
 ```
 
+Testy (pytest — m.in. testy integracyjne mocka IRZplus):
+
+```powershell
+cd HerdManagementBackend
+python -m pytest
+```
+
 ### Aplikacja mobilna
 
 Otworzyć `HerdManagementMobile/` w Android Studio (Hedgehog lub nowszym), zsynchronizować Gradle, uruchomić na emulatorze (API 28+) lub urządzeniu fizycznym.

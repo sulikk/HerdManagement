@@ -33,7 +33,7 @@ class IrzplusStore:
 
     def _seed(self) -> None:
         seed = ZwierzeIndywidualneDTO(
-            numerIdentyfikacyjnyZwierzecia="PL005338887000",
+            numerIdentyfikacyjnyZwierzecia="PL005338887002",
             numerSiedzibyStada="PL000111222",
             plec="samica",
             rasa="HO",
@@ -113,6 +113,21 @@ PLEC_DOZWOLONE = {"samica", "samiec", "nieokreslona"}
 MAX_OPOZNIENIE_DNI = 7  # ustawowy termin zgłoszenia zdarzenia do IRZ
 
 
+def cyfra_kontrolna(pierwsze_11_cyfr: str) -> int:
+    """Cyfra kontrolna numeru bydła: wagi 3,1,3,1,..., wynik (10 - suma mod 10) mod 10.
+
+    Algorytm ustalony empirycznie na rzeczywistych numerach z katalogów buhajów
+    (rozporządzenie określa tylko pozycję cyfry kontrolnej, nie sposób jej liczenia).
+    """
+    suma = sum(int(c) * (3 if i % 2 == 0 else 1) for i, c in enumerate(pierwsze_11_cyfr))
+    return (10 - suma % 10) % 10
+
+
+def poprawny_numer_zwierzecia(numer: str) -> bool:
+    """Format PL + 12 cyfr oraz zgodna cyfra kontrolna."""
+    return bool(EAR_TAG_PATTERN.match(numer)) and cyfra_kontrolna(numer[2:13]) == int(numer[13])
+
+
 def _blad(kod: str, opis: str, numer: str) -> BladWalidacjiDTO:
     return BladWalidacjiDTO(kod=kod, opis=opis, numerZwierzecia=numer)
 
@@ -124,6 +139,9 @@ def validate_common(pozycja: PozycjaZgloszeniaDTO) -> list[BladWalidacjiDTO]:
     if not EAR_TAG_PATTERN.match(numer):
         bledy.append(_blad("ERR_NUMER_ZWIERZECIA",
                            "Numer identyfikacyjny zwierzęcia musi mieć format PL + 12 cyfr.", numer))
+    elif not poprawny_numer_zwierzecia(numer):
+        bledy.append(_blad("ERR_CYFRA_KONTROLNA",
+                           "Numer identyfikacyjny zwierzęcia ma nieprawidłową cyfrę kontrolną.", numer))
     if not pozycja.numerSiedzibyStada:
         bledy.append(_blad("ERR_SIEDZIBA_STADA", "Brak numeru siedziby stada.", numer))
     if pozycja.dataZdarzenia > date.today():
@@ -140,8 +158,9 @@ def validate_urodzenie(store: "IrzplusStore", pozycja: PozycjaZgloszeniaDTO) -> 
         bledy.append(_blad("ERR_PLEC", "Pole płeć jest wymagane (samica/samiec).", numer))
     if not pozycja.numerIdentyfikacyjnyMatki:
         bledy.append(_blad("ERR_BRAK_MATKI", "Zgłoszenie urodzenia bydła wymaga numeru matki.", numer))
-    elif not EAR_TAG_PATTERN.match(pozycja.numerIdentyfikacyjnyMatki):
-        bledy.append(_blad("ERR_NUMER_MATKI", "Numer matki musi mieć format PL + 12 cyfr.", numer))
+    elif not poprawny_numer_zwierzecia(pozycja.numerIdentyfikacyjnyMatki):
+        bledy.append(_blad("ERR_NUMER_MATKI",
+                           "Numer matki musi mieć format PL + 12 cyfr z poprawną cyfrą kontrolną.", numer))
     if store.is_known(numer):
         bledy.append(_blad("ERR_ZWIERZE_ISTNIEJE", "Zwierzę o tym numerze jest już zarejestrowane w IRZ.", numer))
     if (pozycja.dataUrodzenia is not None
