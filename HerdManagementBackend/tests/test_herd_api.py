@@ -51,6 +51,47 @@ class TestZwierzeta:
         assert client.delete(f"/animals/{zwierze['id']}").status_code == 204
         assert client.get(f"/animals/{zwierze['id']}").status_code == 404
 
+    def test_edycja_nadpisuje_pola(self, client: TestClient):
+        zwierze = utworz_zwierze(client)
+
+        response = client.put(f"/animals/{zwierze['id']}", json={
+            "ear_tag": EAR_TAG, "name": "Mućka", "sex": "female", "breed": "SM",
+        })
+
+        assert response.status_code == 200
+        body = response.json()
+        assert (body["name"], body["breed"], body["birth_date"]) == ("Mućka", "SM", None)
+        assert body["created_at"] == zwierze["created_at"]
+        assert client.get(f"/animals/{zwierze['id']}").json()["name"] == "Mućka"
+
+    def test_edycja_na_kolczyk_innego_zwierzecia_zwraca_409(self, client: TestClient):
+        utworz_zwierze(client)
+        drugie = utworz_zwierze(client, ear_tag="PL005544460631")
+
+        response = client.put(f"/animals/{drugie['id']}", json={"ear_tag": EAR_TAG})
+
+        assert response.status_code == 409
+
+    def test_edycja_zachowuje_wlasny_kolczyk(self, client: TestClient):
+        zwierze = utworz_zwierze(client)
+
+        response = client.put(f"/animals/{zwierze['id']}", json={"ear_tag": EAR_TAG, "name": "X"})
+
+        assert response.status_code == 200
+
+    def test_edycja_nieznanego_zwraca_404(self, client: TestClient):
+        assert client.put("/animals/999", json={"ear_tag": EAR_TAG}).status_code == 404
+
+    def test_usuniecie_zwierzecia_usuwa_leczenia(self, client: TestClient):
+        zwierze = utworz_zwierze(client)
+        leczenie = client.post(f"/animals/{zwierze['id']}/treatments", json={
+            "animal_id": zwierze["id"], "drug": "X", "treatment_date": "2024-04-01",
+        }).json()
+
+        client.delete(f"/animals/{zwierze['id']}")
+
+        assert client.delete(f"/treatments/{leczenie['id']}").status_code == 404
+
     def test_paginacja(self, client: TestClient):
         for i in range(3):
             utworz_zwierze(client, ear_tag=f"PL00000000000{i}")

@@ -1,5 +1,11 @@
 package com.example.herdmanagementmobile.data.sync
 
+import kotlinx.serialization.Serializable
+
+/** Payload operacji DELETE — wystarczy lokalne id, zdalne bierzemy z mapy id. */
+@Serializable
+data class DeletePayload(val localId: Long)
+
 /** Wspólne stałe opisujące wpisy w kolejce synchronizacji. */
 object SyncContract {
 
@@ -11,6 +17,8 @@ object SyncContract {
 
     object Operation {
         const val CREATE = "CREATE"
+        const val UPDATE = "UPDATE"
+        const val DELETE = "DELETE"
     }
 
     object Status {

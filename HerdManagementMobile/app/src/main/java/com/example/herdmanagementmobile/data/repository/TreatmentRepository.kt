@@ -23,5 +23,8 @@ class TreatmentRepository @Inject constructor(
         return id
     }
 
-    suspend fun delete(id: Long) = treatmentDao.deleteById(id)
+    suspend fun delete(id: Long) {
+        treatmentDao.deleteById(id)
+        syncManager.enqueueTreatmentDelete(id)
+    }
 }

@@ -41,4 +41,7 @@ interface SyncDao {
 
     @Query("SELECT remoteId FROM id_mapping WHERE entity = :entity AND localId = :localId")
     suspend fun remoteIdFor(entity: String, localId: Long): Long?
+
+    @Query("DELETE FROM id_mapping WHERE entity = :entity AND localId = :localId")
+    suspend fun deleteMapping(entity: String, localId: Long)
 }

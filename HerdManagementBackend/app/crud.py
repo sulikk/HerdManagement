@@ -23,6 +23,14 @@ def create_animal(db: Session, data: schemas.AnimalCreate) -> models.Animal:
     return animal
 
 
+def update_animal(db: Session, animal: models.Animal, data: schemas.AnimalCreate) -> models.Animal:
+    for field, value in data.model_dump().items():
+        setattr(animal, field, value)
+    db.commit()
+    db.refresh(animal)
+    return animal
+
+
 def delete_animal(db: Session, animal_id: int) -> bool:
     animal = db.get(models.Animal, animal_id)
     if animal is None:

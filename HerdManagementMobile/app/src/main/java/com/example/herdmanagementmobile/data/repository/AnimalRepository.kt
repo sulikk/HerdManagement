@@ -30,7 +30,14 @@ class AnimalRepository @Inject constructor(
         return id
     }
 
-    suspend fun update(animal: Animal) = animalDao.update(AnimalEntity.fromDomain(animal))
+    suspend fun update(animal: Animal) {
+        animalDao.update(AnimalEntity.fromDomain(animal))
+        syncManager.enqueueAnimalUpdate(animal)
+    }
 
-    suspend fun delete(id: Long) = animalDao.deleteById(id)
+    /** Usuwa zwierzę lokalnie (kaskadowo zdarzenia i leczenia) i kolejkuje usunięcie na serwerze. */
+    suspend fun delete(id: Long) {
+        animalDao.deleteById(id)
+        syncManager.enqueueAnimalDelete(id)
+    }
 }

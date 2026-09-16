@@ -25,7 +25,8 @@ import java.time.LocalDateTime
 
 /**
  * Drenuje kolejkę synchronizacji (FIFO):
- * - zwierzęta i leczenia trafiają do backendu aplikacji (z mapowaniem lokalne id -> zdalne),
+ * - zwierzęta i leczenia trafiają do backendu aplikacji (z mapowaniem lokalne id -> zdalne);
+ *   zwierzęta: tworzenie, edycja, usunięcie; leczenia: tworzenie, usunięcie,
  * - zdarzenia są zgłaszane do Portalu IRZplus, a ich [IrzStatus] jest aktualizowany
  *   na CONFIRMED (przyjęto, nadano numer dokumentu) lub REJECTED (błędy walidacji).
  * Wpisy z zależnością jeszcze niespełnioną zostają PENDING i powodują ponowienie.
@@ -63,15 +64,25 @@ class SyncWorker @AssistedInject constructor(
         return if (anyRetry) Result.retry() else Result.success()
     }
 
-    private suspend fun process(entry: SyncQueueEntity): Outcome = when (entry.entity) {
-        SyncContract.Entity.ANIMAL -> pushAnimal(entry)
-        SyncContract.Entity.EVENT -> pushEvent(entry)
-        SyncContract.Entity.TREATMENT -> pushTreatment(entry)
+    private suspend fun process(entry: SyncQueueEntity): Outcome = when (entry.entity to entry.operation) {
+        SyncContract.Entity.ANIMAL to SyncContract.Operation.CREATE -> pushAnimal(entry)
+        SyncContract.Entity.ANIMAL to SyncContract.Operation.UPDATE -> updateAnimal(entry)
+        SyncContract.Entity.ANIMAL to SyncContract.Operation.DELETE ->
+            deleteRemote(entry, SyncContract.Entity.ANIMAL) { api.deleteAnimal(it) }
+        SyncContract.Entity.EVENT to SyncContract.Operation.CREATE -> pushEvent(entry)
+        SyncContract.Entity.TREATMENT to SyncContract.Operation.CREATE -> pushTreatment(entry)
+        SyncContract.Entity.TREATMENT to SyncContract.Operation.DELETE ->
+            deleteRemote(entry, SyncContract.Entity.TREATMENT) { api.deleteTreatment(it) }
         else -> Outcome.FAILED
     }
 
     private suspend fun pushAnimal(entry: SyncQueueEntity): Outcome {
         val dto = json.decodeFromString<AnimalDto>(entry.payload)
+        createAnimalRemote(dto)
+        return Outcome.DONE
+    }
+
+    private suspend fun createAnimalRemote(dto: AnimalDto) {
         val remote = try {
             api.createAnimal(dto)
         } catch (e: HttpException) {
@@ -84,13 +95,48 @@ class SyncWorker @AssistedInject constructor(
             }
         }
         syncDao.putMapping(IdMappingEntity(SyncContract.Entity.ANIMAL, dto.id, remote.id))
+    }
+
+    private suspend fun updateAnimal(entry: SyncQueueEntity): Outcome {
+        val dto = json.decodeFromString<AnimalDto>(entry.payload)
+        val remoteId = syncDao.remoteIdFor(SyncContract.Entity.ANIMAL, dto.id)
+            ?: return if (animalDao.getById(dto.id) == null) Outcome.DONE else Outcome.RETRY
+        try {
+            api.updateAnimal(remoteId, dto.copy(id = remoteId))
+        } catch (e: HttpException) {
+            // Serwer nie zna już tego zwierzęcia (np. wyczyszczona baza) — załóż je ponownie.
+            if (e.code() != 404) throw e
+            createAnimalRemote(dto)
+        }
+        return Outcome.DONE
+    }
+
+    /**
+     * Usunięcie po stronie serwera. Brak mapowania = obiekt nigdy nie dotarł na serwer
+     * (wcześniejszy CREATE przetwarzany jest przed nami, FIFO), więc nie ma czego usuwać.
+     * 404 traktujemy jako sukces — stan docelowy jest osiągnięty.
+     */
+    private suspend fun deleteRemote(
+        entry: SyncQueueEntity,
+        entity: String,
+        call: suspend (Long) -> Unit,
+    ): Outcome {
+        val payload = json.decodeFromString<DeletePayload>(entry.payload)
+        val remoteId = syncDao.remoteIdFor(entity, payload.localId) ?: return Outcome.DONE
+        try {
+            call(remoteId)
+        } catch (e: HttpException) {
+            if (e.code() != 404) throw e
+        }
+        syncDao.deleteMapping(entity, payload.localId)
         return Outcome.DONE
     }
 
     private suspend fun pushEvent(entry: SyncQueueEntity): Outcome {
         val dto = json.decodeFromString<EventDto>(entry.payload)
+        // Zwierzę usunięte lokalnie (razem z tym zdarzeniem) — nie ma czego zgłaszać.
         val animal = animalDao.getById(dto.animalId)?.toDomain()
-            ?: return Outcome.RETRY // zwierzę zniknęło lokalnie — spróbuj później
+            ?: return Outcome.DONE
         val event = dto.toDomain()
 
         val response = irzplus.zglosZdarzenie(event, animal)
@@ -111,7 +157,7 @@ class SyncWorker @AssistedInject constructor(
     private suspend fun pushTreatment(entry: SyncQueueEntity): Outcome {
         val dto = json.decodeFromString<TreatmentDto>(entry.payload)
         val remoteAnimalId = syncDao.remoteIdFor(SyncContract.Entity.ANIMAL, dto.animalId)
-            ?: return Outcome.RETRY
+            ?: return if (animalDao.getById(dto.animalId) == null) Outcome.DONE else Outcome.RETRY
         val created = api.createTreatment(remoteAnimalId, dto.copy(animalId = remoteAnimalId))
         syncDao.putMapping(IdMappingEntity(SyncContract.Entity.TREATMENT, dto.id, created.id))
         return Outcome.DONE

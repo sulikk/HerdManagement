@@ -7,6 +7,7 @@ import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Path
 
 /**
@@ -23,6 +24,9 @@ interface HerdApiService {
 
     @POST("animals")
     suspend fun createAnimal(@Body body: AnimalDto): AnimalDto
+
+    @PUT("animals/{id}")
+    suspend fun updateAnimal(@Path("id") id: Long, @Body body: AnimalDto): AnimalDto
 
     @DELETE("animals/{id}")
     suspend fun deleteAnimal(@Path("id") id: Long)

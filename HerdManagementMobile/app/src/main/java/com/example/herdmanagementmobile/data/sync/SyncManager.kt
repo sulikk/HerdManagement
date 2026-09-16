@@ -35,23 +35,35 @@ class SyncManager @Inject constructor(
     fun observePendingCount(): Flow<Int> = syncDao.observePendingCount()
 
     suspend fun enqueueAnimalCreate(animal: Animal) {
-        enqueue(SyncContract.Entity.ANIMAL, json.encodeToString(animal.toDto()))
+        enqueue(SyncContract.Entity.ANIMAL, SyncContract.Operation.CREATE, json.encodeToString(animal.toDto()))
+    }
+
+    suspend fun enqueueAnimalUpdate(animal: Animal) {
+        enqueue(SyncContract.Entity.ANIMAL, SyncContract.Operation.UPDATE, json.encodeToString(animal.toDto()))
+    }
+
+    suspend fun enqueueAnimalDelete(localId: Long) {
+        enqueue(SyncContract.Entity.ANIMAL, SyncContract.Operation.DELETE, json.encodeToString(DeletePayload(localId)))
     }
 
     suspend fun enqueueEventCreate(event: AnimalEvent) {
-        enqueue(SyncContract.Entity.EVENT, json.encodeToString(event.toDto()))
+        enqueue(SyncContract.Entity.EVENT, SyncContract.Operation.CREATE, json.encodeToString(event.toDto()))
     }
 
     suspend fun enqueueTreatmentCreate(treatment: Treatment) {
-        enqueue(SyncContract.Entity.TREATMENT, json.encodeToString(treatment.toDto()))
+        enqueue(SyncContract.Entity.TREATMENT, SyncContract.Operation.CREATE, json.encodeToString(treatment.toDto()))
     }
 
-    private suspend fun enqueue(entity: String, payload: String) {
+    suspend fun enqueueTreatmentDelete(localId: Long) {
+        enqueue(SyncContract.Entity.TREATMENT, SyncContract.Operation.DELETE, json.encodeToString(DeletePayload(localId)))
+    }
+
+    private suspend fun enqueue(entity: String, operation: String, payload: String) {
         val now = LocalDateTime.now()
         syncDao.enqueue(
             SyncQueueEntity(
                 entity = entity,
-                operation = SyncContract.Operation.CREATE,
+                operation = operation,
                 payload = payload,
                 status = SyncContract.Status.PENDING,
                 createdAt = now,
