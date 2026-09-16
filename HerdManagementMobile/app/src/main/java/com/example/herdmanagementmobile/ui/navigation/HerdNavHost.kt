@@ -17,6 +17,7 @@ import com.example.herdmanagementmobile.ui.screens.events.EventFormScreen
 import com.example.herdmanagementmobile.ui.screens.nfc.NfcScreen
 import com.example.herdmanagementmobile.ui.screens.scanner.ScannerScreen
 import com.example.herdmanagementmobile.ui.screens.settings.SettingsScreen
+import com.example.herdmanagementmobile.ui.screens.statistics.StatisticsScreen
 import com.example.herdmanagementmobile.ui.screens.treatments.TreatmentFormScreen
 
 @Composable
@@ -42,6 +43,9 @@ fun HerdNavHost(
                 },
                 onSettingsClick = {
                     navController.navigate(Route.Settings.path)
+                },
+                onStatisticsClick = {
+                    navController.navigate(Route.Statistics.path)
                 },
             )
         }
@@ -145,6 +149,9 @@ fun HerdNavHost(
         }
         composable(Route.Settings.path) {
             SettingsScreen(onBack = { navController.popBackStack() })
+        }
+        composable(Route.Statistics.path) {
+            StatisticsScreen(onBack = { navController.popBackStack() })
         }
     }
 }

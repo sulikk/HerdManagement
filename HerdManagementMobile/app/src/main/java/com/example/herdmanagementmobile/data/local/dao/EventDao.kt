@@ -13,6 +13,9 @@ interface EventDao {
     @Query("SELECT * FROM events WHERE animalId = :animalId ORDER BY eventDate DESC")
     fun observeForAnimal(animalId: Long): Flow<List<EventEntity>>
 
+    @Query("SELECT * FROM events ORDER BY eventDate")
+    fun observeAll(): Flow<List<EventEntity>>
+
     @Query("SELECT * FROM events WHERE irzStatus = 'PENDING' ORDER BY eventDate")
     fun observePending(): Flow<List<EventEntity>>
 

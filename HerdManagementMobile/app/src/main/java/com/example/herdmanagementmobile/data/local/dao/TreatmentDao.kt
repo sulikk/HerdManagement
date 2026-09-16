@@ -12,6 +12,9 @@ interface TreatmentDao {
     @Query("SELECT * FROM treatments WHERE animalId = :animalId ORDER BY treatmentDate DESC")
     fun observeForAnimal(animalId: Long): Flow<List<TreatmentEntity>>
 
+    @Query("SELECT * FROM treatments ORDER BY treatmentDate")
+    fun observeAll(): Flow<List<TreatmentEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(treatment: TreatmentEntity): Long
 

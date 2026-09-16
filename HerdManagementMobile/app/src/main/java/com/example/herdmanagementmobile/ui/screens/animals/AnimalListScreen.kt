@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.EventAvailable
@@ -43,6 +44,7 @@ fun AnimalListScreen(
     onAddClick: () -> Unit,
     onComplianceClick: () -> Unit,
     onSettingsClick: () -> Unit,
+    onStatisticsClick: () -> Unit,
     viewModel: AnimalListViewModel = hiltViewModel(),
 ) {
     val animals by viewModel.animals.collectAsState()
@@ -54,6 +56,12 @@ fun AnimalListScreen(
                 title = { Text("Stado") },
                 actions = {
                     SyncStatusChip(pendingCount = pendingSync)
+                    IconButton(onClick = onStatisticsClick) {
+                        Icon(
+                            Icons.Default.BarChart,
+                            contentDescription = "Statystyki stada",
+                        )
+                    }
                     IconButton(onClick = onComplianceClick) {
                         Icon(
                             Icons.Default.EventAvailable,
