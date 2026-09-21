@@ -36,7 +36,7 @@ PracaInzynierska/
 - **Framework:** FastAPI (Python 3.12)
 - **Baza danych:** PostgreSQL (planowane, na czas demo SQLite)
 - **Integracja:** klient HTTP do API IRZplus (ARiMR)
-- **LLM:** orkiestracja wywołań narzędzi przez backend (klucz API chowany po stronie serwera)
+- **LLM:** orkiestracja wywołań narzędzi przez backend — SDK `anthropic`, model `claude-opus-5` (klucz API chowany po stronie serwera)
 
 ## Uruchomienie
 
@@ -49,12 +49,23 @@ pip install -r requirements.txt    # po utworzeniu pliku
 uvicorn main:app --reload
 ```
 
-Testy (pytest — m.in. testy integracyjne mocka IRZplus):
+Asystent LLM wymaga klucza do modelu — bez niego reszta API działa normalnie,
+a `GET /assistant/status` zwraca `configured: false`:
+
+```powershell
+cd HerdManagementBackend
+copy .env.example .env      # i wpisać własny klucz w LLM_API_KEY
+```
+
+Testy (pytest — m.in. testy integracyjne mocka IRZplus i pętli agentowej na atrapie modelu):
 
 ```powershell
 cd HerdManagementBackend
 python -m pytest
 ```
+
+Asystenta można sprawdzić ręcznie z aplikacji mobilnej albo przez Swagger UI
+(`http://127.0.0.1:8000/docs`, sekcja `assistant`).
 
 ### Aplikacja mobilna
 
@@ -66,16 +77,66 @@ Aktualny stan względem karty pracy:
 
 | # | Zadanie | Status |
 |---|---------|--------|
-| 1 | Analiza prawna + dokumentacja IRZplus + user stories | do zrobienia |
-| 2 | Architektura systemu + model danych | w trakcie (dokument `docs/plan.tex`) |
-| 3 | Lokalna baza SQLite + ekrany ewidencji | do zrobienia |
-| 4 | Skaner kodów kreskowych/QR + OCR numeru kolczyka | do zrobienia |
-| 5 | Odczyt NFC/RFID (ISO 11784/11785) | do zrobienia |
-| 6 | Klient API IRZplus | do zrobienia |
-| 7 | Kolejka zgłoszeń offline + widok zgodności | do zrobienia |
-| 8 | Asystent LLM z narzędziami | do zrobienia |
+| 1 | Analiza prawna + dokumentacja IRZplus + user stories | w trakcie |
+| 2 | Architektura systemu + model danych | zrobione (`docs/plan.tex`) |
+| 3 | Lokalna baza SQLite + ekrany ewidencji + statystyki | zrobione |
+| 4 | Skaner kodów kreskowych/QR + walidacja cyfry kontrolnej | zrobione |
+| 5 | Odczyt NFC/RFID (ISO 11784/11785) | zrobione |
+| 6 | Klient API IRZplus + mock Portalu | zrobione |
+| 7 | Kolejka zgłoszeń offline + widok zgodności 7-dniowej | zrobione |
+| 8 | Asystent LLM z narzędziami i polityką potwierdzania akcji | zrobione |
 | 9 | Moduł publikacji ogłoszeń | do zrobienia |
 | 10 | Omówienie wyników i wnioski | do zrobienia |
+
+## Asystent LLM (zadanie 8)
+
+Asystent działa po stronie backendu (`app/assistant/`) — telefon wysyła tylko tekst
+i identyfikator rozmowy, klucz API modelu nigdy nie trafia do aplikacji.
+
+Narzędzia udostępnione modelowi:
+
+| Narzędzie | Rodzaj | Opis |
+|---|---|---|
+| `lista_zwierzat` | odczyt | lista/wyszukiwanie sztuk w ewidencji |
+| `dane_zwierzecia` | odczyt | karta sztuki: dane, zdarzenia, leczenia |
+| `statystyki_stada` | odczyt | liczebność, płeć, grupy wiekowe, rasy |
+| `zdarzenia_do_zgloszenia` | odczyt | zdarzenia niepotwierdzone przez IRZ + termin 7 dni |
+| `aktywne_karencje` | odczyt | trwające okresy karencji |
+| `dodaj_zwierze` | zapis | nowa sztuka w ewidencji |
+| `dodaj_zdarzenie` | zapis | urodzenie / przybycie / ubycie / padnięcie |
+| `dodaj_leczenie` | zapis | zabieg wraz z karencją |
+
+Polityka potwierdzania akcji: narzędzia odczytowe wykonują się od razu, a każde
+narzędzie zapisujące zatrzymuje pętlę agentową — backend zwraca `pending_action`,
+aplikacja pokazuje pytanie („Zatwierdź” / „Odrzuć”), i dopiero `POST /assistant/confirm`
+wykonuje zapis. Wymusza to backend, nie treść promptu. Wszystkie akcje (również
+odrzucone) trafiają do dziennika `GET /assistant/audit`.
+
+Endpointy: `GET /assistant/status`, `POST /assistant/chat`, `POST /assistant/confirm`,
+`GET /assistant/conversations/{id}`, `DELETE /assistant/conversations/{id}`, `GET /assistant/audit`.
+
+## Synchronizacja dwukierunkowa (wymaganie N5)
+
+Aplikacja działa offline na lokalnej bazie Room, ale ewidencja zmienia się też poza
+telefonem — zapisuje w niej asystent LLM, można ją poprawić bezpośrednio w backendzie
+albo z drugiego urządzenia. Hodowca podejmuje decyzje na podstawie tego, co widzi na
+ekranie, więc rozjazd telefonu z serwerem jest błędem, nie niedogodnością.
+
+- **Wysyłka** — `SyncManager` kolejkuje każdą zmianę lokalną, `SyncWorker` drenuje
+  kolejkę FIFO (z mapowaniem identyfikatorów lokalnych na zdalne).
+- **Pobieranie** — `GET /sync/changes?since=...` zwraca wyłącznie rekordy zmienione
+  po podanym znaczniku oraz „nagrobki” po usuniętych (tabela `deletions`; bez nich
+  telefon trzymałby skasowany rekord w nieskończoność). `SyncPuller` wgrywa je do Room.
+- **Znacznik** — aplikacja przechowuje `server_time` z odpowiedzi i oddaje go nietknięty
+  w kolejnym zapytaniu. Liczy się zegar serwera, nie telefonu.
+- **Konflikty** — pobieranie rusza dopiero po opróżnieniu kolejki wysyłkowej. Dopóki
+  cokolwiek czeka na wysłanie, wygrywa wersja lokalna; potem wersja z serwera nadpisuje
+  lokalną. Zmiana użytkownika nigdy nie ginie, a stan i tak się zbiega.
+- **Wyzwalacze** — start aplikacji, każda zmiana lokalna, zatwierdzenie akcji asystenta,
+  kliknięcie chipa synchronizacji oraz zadanie cykliczne co 15 minut.
+
+Testy: `tests/test_sync.py` (backend) i `SyncPullerTest` (mapowanie identyfikatorów,
+polityka konfliktów, nagrobki).
 
 ## Dokumentacja
 

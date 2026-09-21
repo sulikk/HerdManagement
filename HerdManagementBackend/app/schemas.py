@@ -23,6 +23,7 @@ class AnimalRead(AnimalBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
     created_at: datetime
+    updated_at: datetime | None = None
 
 
 class IrzResult(BaseModel):
@@ -50,6 +51,7 @@ class EventRead(EventBase, IrzResult):
     model_config = ConfigDict(from_attributes=True)
     id: int
     created_at: datetime
+    updated_at: datetime | None = None
 
 
 class TreatmentBase(BaseModel):
@@ -69,6 +71,7 @@ class TreatmentCreate(TreatmentBase):
 class TreatmentRead(TreatmentBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    updated_at: datetime | None = None
 
 
 class MeasurementBase(BaseModel):
@@ -82,3 +85,30 @@ class MeasurementBase(BaseModel):
 class MeasurementRead(MeasurementBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
+
+
+# --- Synchronizacja przyrostowa (N5) ------------------------------------
+
+class DeletionRead(BaseModel):
+    """Informacja, że rekord o tym identyfikatorze przestał istnieć na serwerze."""
+
+    model_config = ConfigDict(from_attributes=True)
+    entity: str = Field(description="animal | event | treatment")
+    entity_id: int
+    deleted_at: datetime
+
+
+class SyncChanges(BaseModel):
+    """Odpowiedź ``GET /sync/changes`` — tylko to, co zmieniło się od ``since``.
+
+    ``server_time`` aplikacja mobilna zapisuje u siebie i podaje jako ``since``
+    w kolejnym zapytaniu. Bierzemy czas serwera, a nie telefonu, żeby rozjechany
+    zegar urządzenia nie gubił rekordów.
+    """
+
+    server_time: datetime
+    since: datetime | None = None
+    animals: list[AnimalRead] = Field(default_factory=list)
+    events: list[EventRead] = Field(default_factory=list)
+    treatments: list[TreatmentRead] = Field(default_factory=list)
+    deletions: list[DeletionRead] = Field(default_factory=list)

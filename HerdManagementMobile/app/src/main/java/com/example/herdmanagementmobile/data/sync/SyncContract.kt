@@ -44,6 +44,10 @@ object SyncContract {
     const val MAX_RETRIES = 5
     const val UNIQUE_WORK_NAME = "herd-sync"
     const val RETRY_WORK_NAME = "herd-sync-retry"
+    const val PERIODIC_WORK_NAME = "herd-sync-periodic"
+
+    /** 15 min to minimum, jakie dopuszcza WorkManager dla zadan cyklicznych. */
+    const val PERIODIC_MINUTES = 15L
 
     /** Backoff ponowień: 30 s, 60 s, 2 min, 4 min, maksymalnie 5 min. */
     const val RETRY_BASE_SECONDS = 30L

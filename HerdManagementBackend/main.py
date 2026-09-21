@@ -3,10 +3,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.assistant.router import router as assistant_router
 from app.config import settings
 from app.database import init_db
 from app.irzplus.router import router as irzplus_router
-from app.routers import animals, events, health, treatments
+from app.routers import animals, events, health, sync, treatments
 
 
 @asynccontextmanager
@@ -34,4 +35,6 @@ app.include_router(health.router)
 app.include_router(animals.router)
 app.include_router(events.router)
 app.include_router(treatments.router)
+app.include_router(sync.router)
 app.include_router(irzplus_router)
+app.include_router(assistant_router)

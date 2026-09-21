@@ -2,9 +2,11 @@ package com.example.herdmanagementmobile.data.sync
 
 import android.content.Context
 import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.example.herdmanagementmobile.data.local.dao.SyncDao
 import com.example.herdmanagementmobile.data.local.entity.SyncQueueEntity
@@ -19,6 +21,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.time.Duration
 import java.time.LocalDateTime
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -111,6 +114,26 @@ class SyncManager @Inject constructor(
         WorkManager.getInstance(context).enqueueUniqueWork(
             SyncContract.UNIQUE_WORK_NAME,
             ExistingWorkPolicy.APPEND_OR_REPLACE,
+            request,
+        )
+    }
+
+    /**
+     * Cykliczne odpytywanie backendu o zmiany (co [SyncContract.PERIODIC_MINUTES] min).
+     *
+     * Same zmiany lokalne nie wystarczą do uruchomienia synchronizacji: wpis dodany
+     * przez asystenta LLM albo poprawka zrobiona w backendzie powstają poza telefonem
+     * i nic by ich nie zaciągnęło. KEEP — ponowne wywołanie nie resetuje odliczania.
+     */
+    fun schedulePeriodicSync() {
+        val request = PeriodicWorkRequestBuilder<SyncWorker>(
+            SyncContract.PERIODIC_MINUTES, TimeUnit.MINUTES,
+        )
+            .setConstraints(networkConstraint())
+            .build()
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            SyncContract.PERIODIC_WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
             request,
         )
     }

@@ -55,6 +55,24 @@ interface SyncDao {
     @Query("SELECT remoteId FROM id_mapping WHERE entity = :entity AND localId = :localId")
     suspend fun remoteIdFor(entity: String, localId: Long): Long?
 
+    /** Kierunek odwrotny — potrzebny przy pobieraniu zmian z backendu. */
+    @Query("SELECT localId FROM id_mapping WHERE entity = :entity AND remoteId = :remoteId")
+    suspend fun localIdFor(entity: String, remoteId: Long): Long?
+
     @Query("DELETE FROM id_mapping WHERE entity = :entity AND localId = :localId")
     suspend fun deleteMapping(entity: String, localId: Long)
+
+    /**
+     * Ile zmian czeka jeszcze na wysłanie (łącznie z nieudanymi).
+     *
+     * Pobieranie zmian z serwera ruszą dopiero, gdy to zejdzie do zera — inaczej
+     * starsza wersja z backendu nadpisałaby lokalną poprawkę, której nie zdążyliśmy
+     * wypchnąć. Zgłoszenia do IRZ pomijamy: po porażce wracają do ręcznej decyzji
+     * użytkownika i mogłyby blokować synchronizację w nieskończoność.
+     */
+    @Query(
+        "SELECT COUNT(*) FROM sync_queue " +
+            "WHERE status IN ('PENDING', 'FAILED') AND operation != 'IRZ_SUBMIT'",
+    )
+    suspend fun unsentCount(): Int
 }

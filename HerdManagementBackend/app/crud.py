@@ -1,6 +1,19 @@
+from datetime import datetime
+
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+
+# Nazwy encji w nagrobkach — ten sam słownik rozumie aplikacja mobilna.
+ENTITY_ANIMAL = "animal"
+ENTITY_EVENT = "event"
+ENTITY_TREATMENT = "treatment"
+
+
+def _tombstone(db: Session, entity: str, entity_id: int) -> None:
+    """Zostawia ślad po usuniętym rekordzie dla synchronizacji przyrostowej."""
+    db.add(models.Deletion(entity=entity, entity_id=entity_id))
 
 
 def list_animals(db: Session, skip: int = 0, limit: int = 100) -> list[models.Animal]:
@@ -35,6 +48,13 @@ def delete_animal(db: Session, animal_id: int) -> bool:
     animal = db.get(models.Animal, animal_id)
     if animal is None:
         return False
+    # Nagrobki dzieci zapisujemy jawnie — kaskada usuwa je po cichu, a telefon
+    # musi dostać komplet identyfikatorów do skasowania u siebie.
+    for event in animal.events:
+        _tombstone(db, ENTITY_EVENT, event.id)
+    for treatment in animal.treatments:
+        _tombstone(db, ENTITY_TREATMENT, treatment.id)
+    _tombstone(db, ENTITY_ANIMAL, animal_id)
     db.delete(animal)
     db.commit()
     return True
@@ -75,6 +95,7 @@ def delete_event(db: Session, event_id: int) -> bool:
     event = db.get(models.Event, event_id)
     if event is None:
         return False
+    _tombstone(db, ENTITY_EVENT, event_id)
     db.delete(event)
     db.commit()
     return True
@@ -103,6 +124,35 @@ def delete_treatment(db: Session, treatment_id: int) -> bool:
     treatment = db.get(models.Treatment, treatment_id)
     if treatment is None:
         return False
+    _tombstone(db, ENTITY_TREATMENT, treatment_id)
     db.delete(treatment)
     db.commit()
     return True
+
+
+# --- Synchronizacja przyrostowa (N5) ------------------------------------
+
+def _changed_since(db: Session, model: type, since: datetime | None) -> list:
+    """Rekordy zmienione po ``since``; ``None`` oznacza pełną migawkę.
+
+    ``COALESCE`` na wypadek wierszy sprzed dodania kolumny ``updated_at`` —
+    dla nich datą modyfikacji jest data utworzenia.
+    """
+    query = db.query(model)
+    if since is not None:
+        query = query.filter(func.coalesce(model.updated_at, model.created_at) > since)
+    return query.order_by(model.id).all()
+
+
+def changes_since(db: Session, since: datetime | None) -> dict[str, list]:
+    """Wszystko, co zmieniło się po ``since`` — wsad dla ``GET /sync/changes``."""
+    deletions = db.query(models.Deletion)
+    if since is not None:
+        deletions = deletions.filter(models.Deletion.deleted_at > since)
+
+    return {
+        "animals": _changed_since(db, models.Animal, since),
+        "events": _changed_since(db, models.Event, since),
+        "treatments": _changed_since(db, models.Treatment, since),
+        "deletions": deletions.order_by(models.Deletion.id).all(),
+    }

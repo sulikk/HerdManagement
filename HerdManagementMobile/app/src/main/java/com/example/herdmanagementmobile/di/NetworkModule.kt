@@ -2,6 +2,7 @@ package com.example.herdmanagementmobile.di
 
 import com.example.herdmanagementmobile.BuildConfig
 import com.example.herdmanagementmobile.data.remote.HerdApiService
+import com.example.herdmanagementmobile.data.remote.assistant.AssistantApiService
 import com.example.herdmanagementmobile.data.remote.irzplus.IrzplusApiService
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import dagger.Module
@@ -9,8 +10,10 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import kotlinx.serialization.json.Json
+import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
+import okhttp3.Response
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import java.util.concurrent.TimeUnit
@@ -45,6 +48,7 @@ object NetworkModule {
         }
         return OkHttpClient.Builder()
             .addInterceptor(logging)
+            .addInterceptor(AssistantTimeoutInterceptor)
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .build()
@@ -70,4 +74,29 @@ object NetworkModule {
     @Singleton
     fun provideIrzplusApiService(retrofit: Retrofit): IrzplusApiService =
         retrofit.create(IrzplusApiService::class.java)
+
+    @Provides
+    @Singleton
+    fun provideAssistantApiService(retrofit: Retrofit): AssistantApiService =
+        retrofit.create(AssistantApiService::class.java)
+}
+
+/**
+ * Odpowiedź asystenta powstaje dopiero po rozmowie backendu z modelem językowym
+ * (często kilkadziesiąt sekund), więc dla ścieżek /assistant wydłużamy czas
+ * oczekiwania. Pozostałe wywołania zostają przy krótkim timeoucie.
+ */
+private object AssistantTimeoutInterceptor : Interceptor {
+    private const val ASSISTANT_READ_TIMEOUT_SECONDS = 120
+
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val request = chain.request()
+        if (!request.url.encodedPath.startsWith("/assistant")) {
+            return chain.proceed(request)
+        }
+        return chain
+            .withReadTimeout(ASSISTANT_READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .withWriteTimeout(ASSISTANT_READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .proceed(request)
+    }
 }

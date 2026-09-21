@@ -2,15 +2,17 @@ package com.example.herdmanagementmobile.data.remote
 
 import com.example.herdmanagementmobile.data.remote.dto.AnimalDto
 import com.example.herdmanagementmobile.data.remote.dto.EventDto
+import com.example.herdmanagementmobile.data.remote.dto.IrzResultDto
+import com.example.herdmanagementmobile.data.remote.dto.SyncChangesDto
 import com.example.herdmanagementmobile.data.remote.dto.TreatmentDto
 import retrofit2.http.Body
 import retrofit2.http.DELETE
-import com.example.herdmanagementmobile.data.remote.dto.IrzResultDto
 import retrofit2.http.GET
 import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
+import retrofit2.http.Query
 
 /**
  * Klient REST backendu Herd Management (FastAPI).
@@ -59,4 +61,12 @@ interface HerdApiService {
 
     @DELETE("treatments/{id}")
     suspend fun deleteTreatment(@Path("id") id: Long)
+
+    /**
+     * Zmiany na backendzie od znacznika [since] (pusty = pełna migawka).
+     * Źródło danych, których telefon sam nie wprowadził: wpisy asystenta LLM,
+     * poprawki zrobione w backendzie, dane z innego urządzenia.
+     */
+    @GET("sync/changes")
+    suspend fun getChanges(@Query("since") since: String? = null): SyncChangesDto
 }

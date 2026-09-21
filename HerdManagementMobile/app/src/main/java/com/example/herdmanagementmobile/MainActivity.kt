@@ -24,8 +24,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        // Dociągnij ewentualne zaległe wpisy z kolejki z poprzedniej sesji.
+        // Wypchnij zaległe wpisy z poprzedniej sesji i od razu pobierz zmiany z backendu.
         syncManager.scheduleSync()
+        // Odświeżanie w tle — zmiany powstałe poza telefonem (asystent LLM, inne
+        // urządzenie) nie mają własnego wyzwalacza po stronie aplikacji.
+        syncManager.schedulePeriodicSync()
         setContent {
             HerdManagementMobileTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->

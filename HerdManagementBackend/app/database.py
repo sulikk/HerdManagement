@@ -27,6 +27,7 @@ def init_db(bind: Engine = engine) -> None:
 
     Base.metadata.create_all(bind=bind)
     add_missing_columns(bind)
+    backfill_sync_columns(bind)
 
 
 def add_missing_columns(bind: Engine) -> list[str]:
@@ -48,3 +49,32 @@ def add_missing_columns(bind: Engine) -> list[str]:
                 conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {ddl_type}'))
                 added.append(f"{table.name}.{column.name}")
     return added
+
+
+def backfill_sync_columns(bind: Engine) -> int:
+    """Uzupełnia ``updated_at`` w wierszach sprzed dodania tej kolumny.
+
+    Synchronizacja przyrostowa filtruje po ``updated_at > since``, a porównanie
+    z NULL nigdy nie jest prawdziwe — bez tego kroku dane zapisane przed migracją
+    nigdy nie trafiłyby na telefon. Uzupełniamy datą utworzenia (a gdy i jej brak,
+    bieżącą), więc takie wiersze przyjdą raz i potem się uspokoją.
+    """
+    inspector = inspect(bind)
+    updated = 0
+    with bind.begin() as conn:
+        for table_name in ("animals", "events", "treatments"):
+            if not inspector.has_table(table_name):
+                continue
+            columns = {c["name"] for c in inspector.get_columns(table_name)}
+            if "updated_at" not in columns:
+                continue
+            fallback = "created_at" if "created_at" in columns else "CURRENT_TIMESTAMP"
+            result = conn.execute(
+                text(
+                    f'UPDATE "{table_name}" '
+                    f"SET updated_at = COALESCE({fallback}, CURRENT_TIMESTAMP) "
+                    "WHERE updated_at IS NULL"
+                )
+            )
+            updated += result.rowcount or 0
+    return updated

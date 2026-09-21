@@ -12,6 +12,7 @@ import androidx.navigation.navArgument
 import com.example.herdmanagementmobile.ui.screens.animals.AnimalDetailScreen
 import com.example.herdmanagementmobile.ui.screens.animals.AnimalFormScreen
 import com.example.herdmanagementmobile.ui.screens.animals.AnimalListScreen
+import com.example.herdmanagementmobile.ui.screens.assistant.AssistantScreen
 import com.example.herdmanagementmobile.ui.screens.compliance.ComplianceScreen
 import com.example.herdmanagementmobile.ui.screens.events.EventFormScreen
 import com.example.herdmanagementmobile.ui.screens.nfc.NfcScreen
@@ -46,6 +47,9 @@ fun HerdNavHost(
                 },
                 onStatisticsClick = {
                     navController.navigate(Route.Statistics.path)
+                },
+                onAssistantClick = {
+                    navController.navigate(Route.Assistant.path)
                 },
             )
         }
@@ -152,6 +156,9 @@ fun HerdNavHost(
         }
         composable(Route.Statistics.path) {
             StatisticsScreen(onBack = { navController.popBackStack() })
+        }
+        composable(Route.Assistant.path) {
+            AssistantScreen(onBack = { navController.popBackStack() })
         }
     }
 }

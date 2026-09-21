@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.EventAvailable
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -46,6 +47,7 @@ fun AnimalListScreen(
     onComplianceClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onStatisticsClick: () -> Unit,
+    onAssistantClick: () -> Unit,
     viewModel: AnimalListViewModel = hiltViewModel(),
 ) {
     val animals by viewModel.animals.collectAsState()
@@ -57,6 +59,12 @@ fun AnimalListScreen(
                 title = { Text("Stado") },
                 actions = {
                     SyncStatusChip(status = syncStatus, onClick = viewModel::syncNow)
+                    IconButton(onClick = onAssistantClick) {
+                        Icon(
+                            Icons.Default.Psychology,
+                            contentDescription = "Asystent",
+                        )
+                    }
                     IconButton(onClick = onStatisticsClick) {
                         Icon(
                             Icons.Default.BarChart,

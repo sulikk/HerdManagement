@@ -54,6 +54,7 @@ class SyncWorker @AssistedInject constructor(
     private val api: HerdApiService,
     private val irzplus: IrzplusClient,
     private val syncManager: SyncManager,
+    private val syncPuller: SyncPuller,
     private val json: Json,
 ) : CoroutineWorker(context, params) {
 
@@ -72,10 +73,42 @@ class SyncWorker @AssistedInject constructor(
             }
         }
 
+        // Dopiero po opróżnieniu kolejki pobieramy zmiany z backendu — wcześniej
+        // wersja z serwera byłaby starsza od tego, co czeka na wysłanie.
+        pullRemoteChanges()
+
         if (retryAttempt > 0) {
             syncManager.scheduleRetry(Duration.ofSeconds(SyncContract.retryDelaySeconds(retryAttempt)))
         }
         Result.success()
+    }
+
+    /**
+     * Dociąga zmiany z backendu (wpisy asystenta LLM, poprawki z serwera, inne urządzenie).
+     *
+     * Błąd pobierania nie może wywrócić całej synchronizacji — wypchnięte właśnie
+     * zmiany są już na serwerze, a porcja do pobrania przyjdzie przy kolejnym
+     * uruchomieniu (znacznik `since` przesuwa się dopiero po udanym zapisie).
+     */
+    private suspend fun pullRemoteChanges() {
+        try {
+            when (val result = syncPuller.pull()) {
+                is SyncPuller.Result.Skipped -> Unit
+                is SyncPuller.Result.Applied ->
+                    if (result.total > 0) {
+                        android.util.Log.i(
+                            "SyncWorker",
+                            "Pobrano z backendu: ${result.animals} zwierzat, " +
+                                "${result.events} zdarzen, ${result.treatments} leczen, " +
+                                "${result.deletions} usuniec",
+                        )
+                    }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("SyncWorker", "Nie udalo sie pobrac zmian z backendu", e)
+        }
     }
 
     private suspend fun process(entry: SyncQueueEntity) {
