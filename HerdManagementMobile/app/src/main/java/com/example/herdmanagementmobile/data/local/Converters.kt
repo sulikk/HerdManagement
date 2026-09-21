@@ -3,6 +3,7 @@ package com.example.herdmanagementmobile.data.local
 import androidx.room.TypeConverter
 import com.example.herdmanagementmobile.domain.model.EventType
 import com.example.herdmanagementmobile.domain.model.IrzStatus
+import com.example.herdmanagementmobile.domain.model.ListingStatus
 import com.example.herdmanagementmobile.domain.model.MeasurementType
 import com.example.herdmanagementmobile.domain.model.Sex
 import java.time.LocalDate
@@ -31,6 +32,10 @@ class Converters {
 
     @TypeConverter fun irzStatusToString(value: IrzStatus): String = value.name
     @TypeConverter fun stringToIrzStatus(value: String): IrzStatus = IrzStatus.valueOf(value)
+
+    @TypeConverter fun listingStatusToString(value: ListingStatus): String = value.name
+    @TypeConverter fun stringToListingStatus(value: String): ListingStatus =
+        ListingStatus.valueOf(value)
 
     @TypeConverter fun measurementTypeToString(value: MeasurementType): String = value.name
     @TypeConverter fun stringToMeasurementType(value: String): MeasurementType =

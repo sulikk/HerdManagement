@@ -7,6 +7,7 @@ from app.assistant.router import router as assistant_router
 from app.config import settings
 from app.database import init_db
 from app.irzplus.router import router as irzplus_router
+from app.listings.router import router as listings_router
 from app.routers import animals, events, health, sync, treatments
 
 
@@ -36,5 +37,6 @@ app.include_router(animals.router)
 app.include_router(events.router)
 app.include_router(treatments.router)
 app.include_router(sync.router)
+app.include_router(listings_router)
 app.include_router(irzplus_router)
 app.include_router(assistant_router)

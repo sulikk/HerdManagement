@@ -5,6 +5,8 @@ import androidx.room.Room
 import com.example.herdmanagementmobile.data.local.HerdDatabase
 import com.example.herdmanagementmobile.data.local.dao.AnimalDao
 import com.example.herdmanagementmobile.data.local.dao.EventDao
+import com.example.herdmanagementmobile.data.local.dao.InquiryDao
+import com.example.herdmanagementmobile.data.local.dao.ListingDao
 import com.example.herdmanagementmobile.data.local.dao.SyncDao
 import com.example.herdmanagementmobile.data.local.dao.TreatmentDao
 import dagger.Module
@@ -36,4 +38,10 @@ object DatabaseModule {
 
     @Provides
     fun provideSyncDao(db: HerdDatabase): SyncDao = db.syncDao()
+
+    @Provides
+    fun provideListingDao(db: HerdDatabase): ListingDao = db.listingDao()
+
+    @Provides
+    fun provideInquiryDao(db: HerdDatabase): InquiryDao = db.inquiryDao()
 }

@@ -9,6 +9,8 @@ from app import models, schemas
 ENTITY_ANIMAL = "animal"
 ENTITY_EVENT = "event"
 ENTITY_TREATMENT = "treatment"
+ENTITY_LISTING = "listing"
+ENTITY_INQUIRY = "inquiry"
 
 
 def _tombstone(db: Session, entity: str, entity_id: int) -> None:
@@ -54,6 +56,10 @@ def delete_animal(db: Session, animal_id: int) -> bool:
         _tombstone(db, ENTITY_EVENT, event.id)
     for treatment in animal.treatments:
         _tombstone(db, ENTITY_TREATMENT, treatment.id)
+    for listing in animal.listings:
+        for inquiry in listing.inquiries:
+            _tombstone(db, ENTITY_INQUIRY, inquiry.id)
+        _tombstone(db, ENTITY_LISTING, listing.id)
     _tombstone(db, ENTITY_ANIMAL, animal_id)
     db.delete(animal)
     db.commit()
@@ -130,6 +136,128 @@ def delete_treatment(db: Session, treatment_id: int) -> bool:
     return True
 
 
+# --- Ogłoszenia sprzedażowe (zadanie 9) ---------------------------------
+
+def list_listings(
+    db: Session,
+    status: models.ListingStatus | None = None,
+    animal_id: int | None = None,
+) -> list[models.Listing]:
+    query = db.query(models.Listing)
+    if status is not None:
+        query = query.filter(models.Listing.status == status)
+    if animal_id is not None:
+        query = query.filter(models.Listing.animal_id == animal_id)
+    return query.order_by(models.Listing.created_at.desc()).all()
+
+
+def get_listing(db: Session, listing_id: int) -> models.Listing | None:
+    return db.get(models.Listing, listing_id)
+
+
+def get_active_listing_for_animal(db: Session, animal_id: int) -> models.Listing | None:
+    """Ogłoszenie, które wciąż zajmuje zwierzę — szkic albo opublikowane.
+
+    Jedna sztuka nie może być wystawiona dwa razy naraz; sprzedana i wycofana
+    nie blokują wystawienia jej ponownie.
+    """
+    return (
+        db.query(models.Listing)
+        .filter(
+            models.Listing.animal_id == animal_id,
+            models.Listing.status.in_([models.ListingStatus.DRAFT, models.ListingStatus.PUBLISHED]),
+        )
+        .first()
+    )
+
+
+def create_listing(db: Session, data: schemas.ListingCreate) -> models.Listing:
+    listing = models.Listing(**data.model_dump())
+    db.add(listing)
+    db.commit()
+    db.refresh(listing)
+    return listing
+
+
+def update_listing(
+    db: Session, listing: models.Listing, data: schemas.ListingUpdate
+) -> models.Listing:
+    for field_name, value in data.model_dump().items():
+        setattr(listing, field_name, value)
+    # Treść się zmieniła, więc poprzednia odznaka przestaje cokolwiek znaczyć.
+    listing.irz_verified = False
+    listing.irz_verified_at = None
+    listing.irz_message = None
+    db.commit()
+    db.refresh(listing)
+    return listing
+
+
+def set_listing_status(
+    db: Session, listing: models.Listing, status: models.ListingStatus
+) -> models.Listing:
+    listing.status = status
+    if status == models.ListingStatus.PUBLISHED and listing.published_at is None:
+        listing.published_at = models.utcnow()
+    db.commit()
+    db.refresh(listing)
+    return listing
+
+
+def save_listing_verification(
+    db: Session, listing: models.Listing, verified: bool, message: str | None
+) -> models.Listing:
+    listing.irz_verified = verified
+    listing.irz_verified_at = models.utcnow()
+    listing.irz_message = message
+    db.commit()
+    db.refresh(listing)
+    return listing
+
+
+def delete_listing(db: Session, listing_id: int) -> bool:
+    listing = db.get(models.Listing, listing_id)
+    if listing is None:
+        return False
+    for inquiry in listing.inquiries:
+        _tombstone(db, ENTITY_INQUIRY, inquiry.id)
+    _tombstone(db, ENTITY_LISTING, listing_id)
+    db.delete(listing)
+    db.commit()
+    return True
+
+
+# --- Zapytania kupujących -----------------------------------------------
+
+def list_inquiries(db: Session, listing_id: int) -> list[models.Inquiry]:
+    return (
+        db.query(models.Inquiry)
+        .filter(models.Inquiry.listing_id == listing_id)
+        .order_by(models.Inquiry.created_at.desc())
+        .all()
+    )
+
+
+def create_inquiry(
+    db: Session, listing_id: int, data: schemas.InquiryCreate
+) -> models.Inquiry:
+    inquiry = models.Inquiry(listing_id=listing_id, **data.model_dump())
+    db.add(inquiry)
+    db.commit()
+    db.refresh(inquiry)
+    return inquiry
+
+
+def delete_inquiry(db: Session, inquiry_id: int) -> bool:
+    inquiry = db.get(models.Inquiry, inquiry_id)
+    if inquiry is None:
+        return False
+    _tombstone(db, ENTITY_INQUIRY, inquiry_id)
+    db.delete(inquiry)
+    db.commit()
+    return True
+
+
 # --- Synchronizacja przyrostowa (N5) ------------------------------------
 
 def _changed_since(db: Session, model: type, since: datetime | None) -> list:
@@ -154,5 +282,7 @@ def changes_since(db: Session, since: datetime | None) -> dict[str, list]:
         "animals": _changed_since(db, models.Animal, since),
         "events": _changed_since(db, models.Event, since),
         "treatments": _changed_since(db, models.Treatment, since),
+        "listings": _changed_since(db, models.Listing, since),
+        "inquiries": _changed_since(db, models.Inquiry, since),
         "deletions": deletions.order_by(models.Deletion.id).all(),
     }

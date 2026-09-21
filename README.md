@@ -85,7 +85,7 @@ Aktualny stan względem karty pracy:
 | 6 | Klient API IRZplus + mock Portalu | zrobione |
 | 7 | Kolejka zgłoszeń offline + widok zgodności 7-dniowej | zrobione |
 | 8 | Asystent LLM z narzędziami i polityką potwierdzania akcji | zrobione |
-| 9 | Moduł publikacji ogłoszeń | do zrobienia |
+| 9 | Moduł publikacji ogłoszeń | zrobione |
 | 10 | Omówienie wyników i wnioski | do zrobienia |
 
 ## Asystent LLM (zadanie 8)
@@ -115,6 +115,50 @@ odrzucone) trafiają do dziennika `GET /assistant/audit`.
 Endpointy: `GET /assistant/status`, `POST /assistant/chat`, `POST /assistant/confirm`,
 `GET /assistant/conversations/{id}`, `DELETE /assistant/conversations/{id}`, `GET /assistant/audit`.
 
+## Moduł publikacji ogłoszeń (zadanie 9)
+
+Giełda sprzedażowa korzysta z tej samej karty zwierzęcia co ewidencja rejestrowa —
+ogłoszenie wskazuje sztukę, a nie kopiuje jej danych. Trzy wymagania sterują
+kształtem modułu:
+
+- **F13 — formularz wypełniony z karty.** `GET /animals/{id}/listing-draft` zwraca
+  kolczyk, rasę, datę urodzenia i szkic opisu. Hodowca uzupełnia tylko cenę.
+- **F12 — publikacja po jawnej decyzji.** Ogłoszenie powstaje jako `draft`
+  i dopiero `POST /listings/{id}/publish` czyni je widocznym; aplikacja pyta
+  o potwierdzenie w dialogu. Wymusza to model danych, nie sam interfejs.
+- **F14 — odznaka „dane potwierdzone w IRZplus".** `POST /listings/{id}/verify`
+  porównuje kartę zwierzęcia z rejestrem: sprawdza, czy kolczyk w nim figuruje,
+  czy sztuka nie jest rozliczona (ubycie/padnięcie) oraz czy data urodzenia, płeć,
+  rasa, siedziba stada i numer matki się zgadzają. Rozbieżność odbiera odznakę
+  i pokazuje konkretny powód. Edycja treści ogłoszenia także ją unieważnia.
+
+Oznaczenie sprzedaży dotyczy tylko giełdy — ubycie zwierzęcia to osobne zdarzenie
+z własnym obowiązkiem zgłoszenia do IRZplus w ciągu 7 dni, o czym aplikacja
+przypomina.
+
+### Zakres: strona kupującego
+
+`HerdManagementMobile` jest aplikacją **hodowcy**. Kupujący nie jest jej użytkownikiem,
+więc aplikacja kliencka giełdy (przeglądanie ogłoszeń, wysyłanie zapytań) pozostaje
+**poza zakresem pracy** — backend wystawia dla niej gotowe API, ale nie ma dla niego
+interfejsu. W praktyce oznacza to, że:
+
+- `POST /listings/{id}/inquiries` wywołuje się przez Swagger UI (`/docs`) albo `curl`,
+- w aplikacji hodowcy zapytania są wyłącznie **odbierane**: przychodzą synchronizacją
+  pobierającą i pokazują się na karcie ogłoszenia oraz jako licznik na liście.
+
+### Warunek nadania odznaki
+
+Weryfikacja porównuje dane z **rejestrem**, a nie z ewidencją hodowcy. W mocku IRZplus
+zwierzę pojawia się w rejestrze dopiero po zgłoszeniu urodzenia albo przybycia, więc
+sztuka nigdy niezgłoszona dostanie komunikat „kolczyk nie figuruje w rejestrze IRZplus".
+Pełna ścieżka demonstracyjna: karta zwierzęcia → zdarzenie urodzenia/przybycia →
+„Zgłoś do IRZplus" → karta ogłoszenia → „Sprawdź w IRZplus" → odznaka.
+
+Endpointy: `GET /listings`, `GET /listings/{id}`, `POST /listings`, `PUT /listings/{id}`,
+`POST /listings/{id}/{publish|withdraw|sold|verify}`, `DELETE /listings/{id}`,
+`GET|POST /listings/{id}/inquiries`, `GET /animals/{id}/listing-draft`.
+
 ## Synchronizacja dwukierunkowa (wymaganie N5)
 
 Aplikacja działa offline na lokalnej bazie Room, ale ewidencja zmienia się też poza
@@ -135,8 +179,11 @@ ekranie, więc rozjazd telefonu z serwerem jest błędem, nie niedogodnością.
 - **Wyzwalacze** — start aplikacji, każda zmiana lokalna, zatwierdzenie akcji asystenta,
   kliknięcie chipa synchronizacji oraz zadanie cykliczne co 15 minut.
 
-Testy: `tests/test_sync.py` (backend) i `SyncPullerTest` (mapowanie identyfikatorów,
-polityka konfliktów, nagrobki).
+Synchronizacji podlegają zwierzęta, zdarzenia, leczenia, ogłoszenia i zapytania
+kupujących.
+
+Testy: `tests/test_sync.py` i `tests/test_listings.py` (backend) oraz `SyncPullerTest`
+(mapowanie identyfikatorów, polityka konfliktów, nagrobki, ogłoszenia i zapytania).
 
 ## Dokumentacja
 

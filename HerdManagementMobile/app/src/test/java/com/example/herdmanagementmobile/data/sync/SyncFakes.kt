@@ -2,20 +2,31 @@ package com.example.herdmanagementmobile.data.sync
 
 import com.example.herdmanagementmobile.data.local.dao.AnimalDao
 import com.example.herdmanagementmobile.data.local.dao.EventDao
+import com.example.herdmanagementmobile.data.local.dao.InquiryDao
+import com.example.herdmanagementmobile.data.local.dao.ListingDao
 import com.example.herdmanagementmobile.data.local.dao.SyncDao
 import com.example.herdmanagementmobile.data.local.dao.TreatmentDao
 import com.example.herdmanagementmobile.data.local.entity.AnimalEntity
 import com.example.herdmanagementmobile.data.local.entity.EventEntity
 import com.example.herdmanagementmobile.data.local.entity.IdMappingEntity
+import com.example.herdmanagementmobile.data.local.entity.InquiryEntity
+import com.example.herdmanagementmobile.data.local.entity.ListingEntity
 import com.example.herdmanagementmobile.data.local.entity.SyncQueueEntity
 import com.example.herdmanagementmobile.data.local.entity.TreatmentEntity
 import com.example.herdmanagementmobile.data.local.relation.ComplianceEventRow
+import com.example.herdmanagementmobile.data.local.relation.ListingWithAnimal
 import com.example.herdmanagementmobile.data.remote.HerdApiService
 import com.example.herdmanagementmobile.data.remote.dto.AnimalDto
 import com.example.herdmanagementmobile.data.remote.dto.EventDto
+import com.example.herdmanagementmobile.data.remote.dto.InquiryDto
 import com.example.herdmanagementmobile.data.remote.dto.IrzResultDto
+import com.example.herdmanagementmobile.data.remote.dto.ListingDraftDto
+import com.example.herdmanagementmobile.data.remote.dto.ListingDto
+import com.example.herdmanagementmobile.data.remote.dto.ListingVerificationDto
+import com.example.herdmanagementmobile.data.remote.dto.ListingWriteDto
 import com.example.herdmanagementmobile.data.remote.dto.SyncChangesDto
 import com.example.herdmanagementmobile.data.remote.dto.TreatmentDto
+import com.example.herdmanagementmobile.domain.model.ListingStatus
 import com.example.herdmanagementmobile.domain.model.Sex
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -30,6 +41,8 @@ class Fakes {
     val animals = FakeAnimalDao()
     val events = FakeEventDao()
     val treatments = FakeTreatmentDao()
+    val listings = FakeListingDao()
+    val inquiries = FakeInquiryDao()
     val sync = FakeSyncDao()
     val marker = FakeMarkerStore()
 }
@@ -53,6 +66,15 @@ class FakeApi(private val changes: SyncChangesDto) : HerdApiService {
     }
 
     // Pozostałe operacje nie biorą udziału w pobieraniu zmian.
+    override suspend fun getListingDraft(animalId: Long): ListingDraftDto = unsupported()
+    override suspend fun createListing(body: ListingWriteDto): ListingDto = unsupported()
+    override suspend fun updateListing(id: Long, body: ListingWriteDto): ListingDto = unsupported()
+    override suspend fun publishListing(id: Long): ListingDto = unsupported()
+    override suspend fun withdrawListing(id: Long): ListingDto = unsupported()
+    override suspend fun markListingSold(id: Long): ListingDto = unsupported()
+    override suspend fun verifyListing(id: Long): ListingVerificationDto = unsupported()
+    override suspend fun deleteListing(id: Long) = unsupported()
+    override suspend fun listInquiries(id: Long): List<InquiryDto> = unsupported()
     override suspend fun listAnimals(): List<AnimalDto> = unsupported()
     override suspend fun getAnimal(id: Long): AnimalDto = unsupported()
     override suspend fun createAnimal(body: AnimalDto): AnimalDto = unsupported()
@@ -155,6 +177,56 @@ class FakeTreatmentDao : TreatmentDao {
         flowOf(rows.values.filter { it.animalId == animalId })
 
     override fun observeAll(): Flow<List<TreatmentEntity>> = flowOf(rows.values.toList())
+}
+
+class FakeListingDao : ListingDao {
+    val rows = linkedMapOf<Long, ListingEntity>()
+    private var nextId = 1L
+
+    override suspend fun insert(listing: ListingEntity): Long {
+        val id = if (listing.id == 0L) nextId++ else listing.id
+        rows[id] = listing.copy(id = id)
+        return id
+    }
+
+    override suspend fun update(listing: ListingEntity) {
+        rows[listing.id] = listing
+    }
+
+    override suspend fun getById(id: Long): ListingEntity? = rows[id]
+
+    override suspend fun getActiveForAnimal(animalId: Long): ListingEntity? =
+        rows.values.firstOrNull {
+            it.animalId == animalId &&
+                (it.status == ListingStatus.DRAFT || it.status == ListingStatus.PUBLISHED)
+        }
+
+    override suspend fun deleteById(id: Long) {
+        rows.remove(id)
+    }
+
+    override fun observeById(id: Long): Flow<ListingEntity?> = flowOf(rows[id])
+    override fun observeWithAnimal(): Flow<List<ListingWithAnimal>> = flowOf(emptyList())
+}
+
+class FakeInquiryDao : InquiryDao {
+    val rows = linkedMapOf<Long, InquiryEntity>()
+    private var nextId = 1L
+
+    override suspend fun insert(inquiry: InquiryEntity): Long {
+        val id = if (inquiry.id == 0L) nextId++ else inquiry.id
+        rows[id] = inquiry.copy(id = id)
+        return id
+    }
+
+    override suspend fun deleteById(id: Long) {
+        rows.remove(id)
+    }
+
+    override fun observeForListing(listingId: Long): Flow<List<InquiryEntity>> =
+        flowOf(rows.values.filter { it.listingId == listingId })
+
+    override fun observeCount(): Flow<Int> = flowOf(rows.size)
 }
 
 class FakeSyncDao : SyncDao {

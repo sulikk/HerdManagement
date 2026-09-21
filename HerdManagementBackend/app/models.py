@@ -9,8 +9,13 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 
-def _utcnow() -> datetime:
+def utcnow() -> datetime:
+    """Bieżący czas UTC — jedno źródło znaczników czasu dla całego modelu."""
     return datetime.now(timezone.utc)
+
+
+# Alias zachowany dla czytelności definicji kolumn poniżej.
+_utcnow = utcnow
 
 
 class Sex(str, Enum):
@@ -36,6 +41,20 @@ class IrzStatus(str, Enum):
 class MeasurementType(str, Enum):
     WEIGHT = "weight"
     BCS = "bcs"
+
+
+class ListingStatus(str, Enum):
+    """Cykl życia ogłoszenia sprzedażowego.
+
+    Ogłoszenie powstaje jako ``DRAFT`` i dopiero osobna, jawna decyzja użytkownika
+    przenosi je do ``PUBLISHED`` — wymaganie F12 jest więc egzekwowane przez model
+    i osobny endpoint, a nie przez samą grzeczność interfejsu.
+    """
+
+    DRAFT = "draft"
+    PUBLISHED = "published"
+    SOLD = "sold"
+    WITHDRAWN = "withdrawn"
 
 
 class SyncedMixin:
@@ -140,14 +159,53 @@ class Deletion(Base):
     deleted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
 
 
-class Listing(Base):
+class Listing(SyncedMixin, Base):
+    """Ogłoszenie sprzedażowe (zadanie 9).
+
+    Dane zwierzęcia nie są tu kopiowane — ogłoszenie wskazuje na kartę zwierzęcia
+    i z niej bierze kolczyk, rasę, płeć czy datę urodzenia. Dzięki temu jest jedno
+    źródło prawdy: to samo, które trafia do zgłoszeń IRZplus.
+    """
+
     __tablename__ = "listings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     animal_id: Mapped[int] = mapped_column(ForeignKey("animals.id", ondelete="CASCADE"), index=True)
     price: Mapped[float] = mapped_column(Float)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    photo_uri: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    status: Mapped[ListingStatus] = mapped_column(SAEnum(ListingStatus), default=ListingStatus.DRAFT)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # --- Odznaka „dane potwierdzone w IRZplus” (F14) ---
     irz_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    irz_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Powód, dla którego weryfikacja nie przeszła — kupujący widzi konkret,
+    # a nie samą nieobecność odznaki.
+    irz_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     animal: Mapped[Animal] = relationship(back_populates="listings")
+    inquiries: Mapped[list["Inquiry"]] = relationship(
+        back_populates="listing", cascade="all, delete-orphan"
+    )
+
+
+class Inquiry(SyncedMixin, Base):
+    """Zapytanie kupującego o ogłoszenie (zadanie 9).
+
+    Powstaje po stronie backendu — kupujący nie ma aplikacji hodowcy — więc do
+    telefonu trafia wyłącznie przez synchronizację pobierającą.
+    """
+
+    __tablename__ = "inquiries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    listing_id: Mapped[int] = mapped_column(ForeignKey("listings.id", ondelete="CASCADE"), index=True)
+    buyer: Mapped[str] = mapped_column(String(128))
+    contact: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    message: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    listing: Mapped[Listing] = relationship(back_populates="inquiries")

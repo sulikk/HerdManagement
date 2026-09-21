@@ -13,6 +13,7 @@ import com.example.herdmanagementmobile.data.local.entity.SyncQueueEntity
 import com.example.herdmanagementmobile.data.remote.dto.toDto
 import com.example.herdmanagementmobile.domain.model.Animal
 import com.example.herdmanagementmobile.domain.model.AnimalEvent
+import com.example.herdmanagementmobile.domain.model.Listing
 import com.example.herdmanagementmobile.domain.model.Treatment
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -80,6 +81,45 @@ class SyncManager @Inject constructor(
 
     suspend fun enqueueTreatmentDelete(localId: Long) {
         enqueue(SyncContract.Entity.TREATMENT, SyncContract.Operation.DELETE, json.encodeToString(LocalIdPayload(localId)))
+    }
+
+    // --- Ogłoszenia sprzedażowe (zadanie 9) ---------------------------
+
+    // Wszystkie operacje na ogłoszeniu niosą wyłącznie lokalne id — aktualną treść
+    // worker czyta z Room tuż przed wysłaniem, więc kilka edycji z rzędu nie wysyła
+    // nieaktualnych wersji.
+    suspend fun enqueueListingCreate(listing: Listing) {
+        enqueueListingAction(SyncContract.Operation.CREATE, listing.id)
+    }
+
+    suspend fun enqueueListingUpdate(listing: Listing) {
+        enqueueListingAction(SyncContract.Operation.UPDATE, listing.id)
+    }
+
+    /** Publikacja ogłoszenia — wołać wyłącznie po jawnym potwierdzeniu użytkownika (F12). */
+    suspend fun enqueueListingPublish(localId: Long) {
+        enqueueListingAction(SyncContract.Operation.PUBLISH, localId)
+    }
+
+    suspend fun enqueueListingWithdraw(localId: Long) {
+        enqueueListingAction(SyncContract.Operation.WITHDRAW, localId)
+    }
+
+    suspend fun enqueueListingSold(localId: Long) {
+        enqueueListingAction(SyncContract.Operation.MARK_SOLD, localId)
+    }
+
+    /** Weryfikacja wobec rejestru IRZplus — odznaka wróci synchronizacją (F14). */
+    suspend fun enqueueListingVerify(localId: Long) {
+        enqueueListingAction(SyncContract.Operation.VERIFY, localId)
+    }
+
+    suspend fun enqueueListingDelete(localId: Long) {
+        enqueueListingAction(SyncContract.Operation.DELETE, localId)
+    }
+
+    private suspend fun enqueueListingAction(operation: String, localId: Long) {
+        enqueue(SyncContract.Entity.LISTING, operation, json.encodeToString(LocalIdPayload(localId)))
     }
 
     /** Tryb manualnej synchronizacji: ponawia nieudane wpisy i uruchamia sync od razu. */

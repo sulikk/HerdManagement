@@ -20,7 +20,13 @@ import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -55,12 +61,14 @@ fun AnimalDetailScreen(
     onEdit: (Long) -> Unit,
     onAddEvent: (Long) -> Unit,
     onAddTreatment: (Long) -> Unit,
+    onSellClick: (animalId: Long, existingListingId: Long?) -> Unit,
     onDeleted: () -> Unit,
     viewModel: AnimalDetailViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
     var showDeleteDialog by remember { mutableStateOf(false) }
     var eventToSubmit by remember { mutableStateOf<AnimalEvent?>(null) }
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         topBar = {
@@ -105,6 +113,11 @@ fun AnimalDetailScreen(
                     treatments = state.treatments,
                     onAddEvent = onAddEvent,
                     onAddTreatment = onAddTreatment,
+                    onSell = { animalId ->
+                        // Istniejace ogloszenie otwieramy zamiast zakladac drugie -
+                        // backend i tak nie pozwoli wystawic sztuki dwa razy.
+                        scope.launch { onSellClick(animalId, viewModel.activeListingId()) }
+                    },
                     onSubmitToIrz = { event -> eventToSubmit = event },
                 )
             }
@@ -156,6 +169,7 @@ private fun AnimalDetailContent(
     treatments: List<Treatment>,
     onAddEvent: (Long) -> Unit,
     onAddTreatment: (Long) -> Unit,
+    onSell: (Long) -> Unit,
     onSubmitToIrz: (AnimalEvent) -> Unit,
 ) {
     Column(
@@ -181,6 +195,17 @@ private fun AnimalDetailContent(
         animal.breed?.let { DetailRow("Rasa", it) }
         animal.motherEarTag?.let { DetailRow("Kolczyk matki", it) }
         animal.herdId?.let { DetailRow("ID siedziby stada", it) }
+
+        HorizontalDivider()
+
+        OutlinedButton(
+            onClick = { onSell(animal.id) },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(Icons.Default.Storefront, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("Wystaw na sprzedaż")
+        }
 
         HorizontalDivider()
 

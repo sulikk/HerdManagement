@@ -2,16 +2,22 @@ package com.example.herdmanagementmobile.data.sync
 
 import com.example.herdmanagementmobile.data.local.dao.AnimalDao
 import com.example.herdmanagementmobile.data.local.dao.EventDao
+import com.example.herdmanagementmobile.data.local.dao.InquiryDao
+import com.example.herdmanagementmobile.data.local.dao.ListingDao
 import com.example.herdmanagementmobile.data.local.dao.SyncDao
 import com.example.herdmanagementmobile.data.local.dao.TreatmentDao
 import com.example.herdmanagementmobile.data.local.entity.AnimalEntity
 import com.example.herdmanagementmobile.data.local.entity.EventEntity
 import com.example.herdmanagementmobile.data.local.entity.IdMappingEntity
+import com.example.herdmanagementmobile.data.local.entity.InquiryEntity
+import com.example.herdmanagementmobile.data.local.entity.ListingEntity
 import com.example.herdmanagementmobile.data.local.entity.TreatmentEntity
 import com.example.herdmanagementmobile.data.remote.HerdApiService
 import com.example.herdmanagementmobile.data.remote.dto.AnimalDto
 import com.example.herdmanagementmobile.data.remote.dto.DeletionDto
 import com.example.herdmanagementmobile.data.remote.dto.EventDto
+import com.example.herdmanagementmobile.data.remote.dto.InquiryDto
+import com.example.herdmanagementmobile.data.remote.dto.ListingDto
 import com.example.herdmanagementmobile.data.remote.dto.TreatmentDto
 import com.example.herdmanagementmobile.data.remote.dto.toDomain
 import javax.inject.Inject
@@ -38,6 +44,8 @@ class SyncPuller @Inject constructor(
     private val animalDao: AnimalDao,
     private val eventDao: EventDao,
     private val treatmentDao: TreatmentDao,
+    private val listingDao: ListingDao,
+    private val inquiryDao: InquiryDao,
     private val syncState: SyncMarkerStore,
 ) {
 
@@ -49,10 +57,13 @@ class SyncPuller @Inject constructor(
             val animals: Int,
             val events: Int,
             val treatments: Int,
+            val listings: Int,
+            val inquiries: Int,
             val deletions: Int,
             val deferred: Int,
         ) : Result {
-            val total: Int get() = animals + events + treatments + deletions
+            val total: Int
+                get() = animals + events + treatments + listings + inquiries + deletions
         }
     }
 
@@ -63,15 +74,18 @@ class SyncPuller @Inject constructor(
         val changes = api.getChanges(since)
         if (changes.isEmpty) {
             syncState.saveLastPullMarker(changes.serverTime)
-            return Result.Applied(0, 0, 0, 0, 0)
+            return Result.Applied(0, 0, 0, 0, 0, 0, 0)
         }
 
         var deferred = 0
-        // Kolejność ma znaczenie: zdarzenie i leczenie wskazują zwierzę, więc
-        // zwierzęta muszą trafić do bazy (i do mapy identyfikatorów) pierwsze.
+        // Kolejność ma znaczenie: zdarzenie, leczenie i ogłoszenie wskazują zwierzę,
+        // a zapytanie wskazuje ogłoszenie. Rodzic musi trafić do bazy (i do mapy
+        // identyfikatorów) przed dzieckiem.
         changes.animals.forEach { applyAnimal(it) }
         changes.events.forEach { if (!applyEvent(it)) deferred++ }
         changes.treatments.forEach { if (!applyTreatment(it)) deferred++ }
+        changes.listings.forEach { if (!applyListing(it)) deferred++ }
+        changes.inquiries.forEach { if (!applyInquiry(it)) deferred++ }
         changes.deletions.forEach { applyDeletion(it) }
 
         // Gdy czegoś nie dało się wpiąć (brak zwierzęcia-rodzica), nie przesuwamy
@@ -85,6 +99,8 @@ class SyncPuller @Inject constructor(
             animals = changes.animals.size,
             events = changes.events.size,
             treatments = changes.treatments.size,
+            listings = changes.listings.size,
+            inquiries = changes.inquiries.size,
             deletions = changes.deletions.size,
             deferred = deferred,
         )
@@ -153,15 +169,52 @@ class SyncPuller @Inject constructor(
         return true
     }
 
+    // --- Ogłoszenia (zadanie 9) -----------------------------------------
+
+    private suspend fun applyListing(dto: ListingDto): Boolean {
+        val animalLocalId = syncDao.localIdFor(SyncContract.Entity.ANIMAL, dto.animalId)
+            ?: return false
+
+        val localId = syncDao.localIdFor(SyncContract.Entity.LISTING, dto.id)
+        val entity = ListingEntity.fromDomain(dto.toDomain()).copy(
+            id = localId ?: 0L,
+            animalId = animalLocalId,
+        )
+        val newId = listingDao.insert(entity)
+        rememberMapping(SyncContract.Entity.LISTING, localId ?: newId, dto.id)
+        return true
+    }
+
+    /**
+     * Zapytania kupujących powstają wyłącznie na serwerze — to jedyna droga,
+     * którą trafiają do telefonu.
+     */
+    private suspend fun applyInquiry(dto: InquiryDto): Boolean {
+        val listingLocalId = syncDao.localIdFor(SyncContract.Entity.LISTING, dto.listingId)
+            ?: return false
+
+        val localId = syncDao.localIdFor(SyncContract.Entity.INQUIRY, dto.id)
+        val entity = InquiryEntity.fromDomain(dto.toDomain()).copy(
+            id = localId ?: 0L,
+            listingId = listingLocalId,
+        )
+        val newId = inquiryDao.insert(entity)
+        rememberMapping(SyncContract.Entity.INQUIRY, localId ?: newId, dto.id)
+        return true
+    }
+
     // --- Usunięcia ------------------------------------------------------
 
     private suspend fun applyDeletion(dto: DeletionDto) {
         val localId = syncDao.localIdFor(dto.entity, dto.entityId) ?: return
         when (dto.entity) {
-            // Kasowanie zwierzęcia pociąga w Room kaskadę na zdarzenia i leczenia.
+            // Kasowanie zwierzęcia pociąga w Room kaskadę na zdarzenia, leczenia
+            // i ogłoszenia; kasowanie ogłoszenia — na jego zapytania.
             SyncContract.Entity.ANIMAL -> animalDao.deleteById(localId)
             SyncContract.Entity.EVENT -> eventDao.deleteById(localId)
             SyncContract.Entity.TREATMENT -> treatmentDao.deleteById(localId)
+            SyncContract.Entity.LISTING -> listingDao.deleteById(localId)
+            SyncContract.Entity.INQUIRY -> inquiryDao.deleteById(localId)
             else -> return
         }
         syncDao.deleteMapping(dto.entity, localId)

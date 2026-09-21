@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models import EventType, IrzStatus, MeasurementType, Sex
+from app.models import EventType, IrzStatus, ListingStatus, MeasurementType, Sex
 
 
 class AnimalBase(BaseModel):
@@ -87,6 +87,89 @@ class MeasurementRead(MeasurementBase):
     id: int
 
 
+# --- Ogłoszenia sprzedażowe (zadanie 9) ---------------------------------
+
+class ListingBase(BaseModel):
+    animal_id: int
+    price: float = Field(gt=0, description="Cena wywoławcza w złotych.")
+    description: str | None = Field(default=None, max_length=2000)
+    photo_uri: str | None = None
+
+
+class ListingCreate(ListingBase):
+    pass
+
+
+class ListingUpdate(BaseModel):
+    """Edycja treści ogłoszenia. Statusu i odznaki nie da się tu podmienić —
+    zmienia je wyłącznie ``/publish`` i ``/verify``."""
+
+    price: float = Field(gt=0)
+    description: str | None = Field(default=None, max_length=2000)
+    photo_uri: str | None = None
+
+
+class ListingRead(ListingBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    status: ListingStatus
+    published_at: datetime | None = None
+    irz_verified: bool
+    irz_verified_at: datetime | None = None
+    irz_message: str | None = None
+    created_at: datetime
+    updated_at: datetime | None = None
+
+
+class ListingDraft(BaseModel):
+    """Dane karty zwierzęcia do wstępnego wypełnienia formularza ogłoszenia (F13).
+
+    Hodowca nie przepisuje kolczyka, rasy ani daty urodzenia — pola przychodzą
+    z tego samego rekordu, który zasila zgłoszenia do IRZplus.
+    """
+
+    animal_id: int
+    ear_tag: str
+    name: str | None = None
+    birth_date: date | None = None
+    breed: str | None = None
+    sex: Sex
+    herd_id: str | None = None
+    suggested_description: str
+    existing_listing_id: int | None = Field(
+        default=None,
+        description="Ustawione, gdy zwierzę ma już szkic albo opublikowane ogłoszenie.",
+    )
+
+
+class ListingVerification(BaseModel):
+    """Wynik sprawdzenia ogłoszenia wobec rejestru IRZplus (F14)."""
+
+    listing_id: int
+    irz_verified: bool
+    irz_verified_at: datetime | None = None
+    message: str | None = None
+    discrepancies: list[str] = Field(default_factory=list)
+
+
+class InquiryBase(BaseModel):
+    buyer: str = Field(min_length=1, max_length=128)
+    contact: str | None = Field(default=None, max_length=128)
+    message: str = Field(min_length=1, max_length=2000)
+
+
+class InquiryCreate(InquiryBase):
+    pass
+
+
+class InquiryRead(InquiryBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    listing_id: int
+    created_at: datetime
+    updated_at: datetime | None = None
+
+
 # --- Synchronizacja przyrostowa (N5) ------------------------------------
 
 class DeletionRead(BaseModel):
@@ -111,4 +194,6 @@ class SyncChanges(BaseModel):
     animals: list[AnimalRead] = Field(default_factory=list)
     events: list[EventRead] = Field(default_factory=list)
     treatments: list[TreatmentRead] = Field(default_factory=list)
+    listings: list[ListingRead] = Field(default_factory=list)
+    inquiries: list[InquiryRead] = Field(default_factory=list)
     deletions: list[DeletionRead] = Field(default_factory=list)

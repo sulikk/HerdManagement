@@ -3,8 +3,11 @@ package com.example.herdmanagementmobile.data.sync
 import com.example.herdmanagementmobile.data.remote.dto.AnimalDto
 import com.example.herdmanagementmobile.data.remote.dto.DeletionDto
 import com.example.herdmanagementmobile.data.remote.dto.EventDto
+import com.example.herdmanagementmobile.data.remote.dto.InquiryDto
+import com.example.herdmanagementmobile.data.remote.dto.ListingDto
 import com.example.herdmanagementmobile.data.remote.dto.SyncChangesDto
 import com.example.herdmanagementmobile.data.remote.dto.TreatmentDto
+import com.example.herdmanagementmobile.domain.model.ListingStatus
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -37,6 +40,8 @@ class SyncPullerTest {
         animalDao = fakes.animals,
         eventDao = fakes.events,
         treatmentDao = fakes.treatments,
+        listingDao = fakes.listings,
+        inquiryDao = fakes.inquiries,
         syncState = fakes.marker,
     )
 
@@ -45,8 +50,12 @@ class SyncPullerTest {
         animals: List<AnimalDto> = emptyList(),
         events: List<EventDto> = emptyList(),
         treatments: List<TreatmentDto> = emptyList(),
+        listings: List<ListingDto> = emptyList(),
+        inquiries: List<InquiryDto> = emptyList(),
         deletions: List<DeletionDto> = emptyList(),
-    ) = SyncChangesDto(serverTime, null, animals, events, treatments, deletions)
+    ) = SyncChangesDto(
+        serverTime, null, animals, events, treatments, listings, inquiries, deletions,
+    )
 
     @Test
     fun `zwierze z backendu trafia do lokalnej bazy`() = runBlocking {
@@ -167,13 +176,108 @@ class SyncPullerTest {
         assertEquals("2026-09-21T12:00:00Z", fakes.marker.marker)
     }
 
+    // --- Ogłoszenia sprzedażowe (zadanie 9) -----------------------------
+
+    private val listingDto = ListingDto(
+        id = 300L,
+        animalId = 100L,
+        price = 6500.0,
+        description = "Krowa mleczna.",
+        status = "published",
+        irzVerified = true,
+    )
+
+    @Test
+    fun `ogloszenie z backendu trafia pod wlasciwe zwierze`() = runBlocking {
+        val fakes = Fakes()
+
+        puller(fakes, changes(animals = listOf(animalDto), listings = listOf(listingDto))).pull()
+
+        val animalLocalId = fakes.animals.rows.keys.first()
+        assertEquals(1, fakes.listings.rows.size)
+        assertEquals(animalLocalId, fakes.listings.rows.values.first().animalId)
+        assertEquals(ListingStatus.PUBLISHED, fakes.listings.rows.values.first().status)
+    }
+
+    @Test
+    fun `odznaka weryfikacji przychodzi z serwera`() = runBlocking {
+        val fakes = Fakes()
+
+        puller(fakes, changes(animals = listOf(animalDto), listings = listOf(listingDto))).pull()
+
+        assertTrue(fakes.listings.rows.values.first().irzVerified)
+    }
+
+    @Test
+    fun `zmiana statusu ogloszenia nie tworzy drugiego rekordu`() = runBlocking {
+        val fakes = Fakes()
+        puller(fakes, changes(animals = listOf(animalDto), listings = listOf(listingDto))).pull()
+        puller(fakes, changes(listings = listOf(listingDto.copy(status = "sold")))).pull()
+
+        assertEquals(1, fakes.listings.rows.size)
+        assertEquals(ListingStatus.SOLD, fakes.listings.rows.values.first().status)
+    }
+
+    @Test
+    fun `zapytanie kupujacego trafia pod wlasciwe ogloszenie`() = runBlocking {
+        val fakes = Fakes()
+        val inquiry = InquiryDto(
+            id = 900L,
+            listingId = 300L,
+            buyer = "Jan Kowalski",
+            message = "Czy sztuka jest cielna?",
+        )
+
+        puller(
+            fakes,
+            changes(
+                animals = listOf(animalDto),
+                listings = listOf(listingDto),
+                inquiries = listOf(inquiry),
+            ),
+        ).pull()
+
+        val listingLocalId = fakes.listings.rows.keys.first()
+        assertEquals(1, fakes.inquiries.rows.size)
+        assertEquals(listingLocalId, fakes.inquiries.rows.values.first().listingId)
+        assertEquals("Jan Kowalski", fakes.inquiries.rows.values.first().buyer)
+    }
+
+    @Test
+    fun `zapytanie bez znanego ogloszenia jest odlozone`() = runBlocking {
+        val fakes = Fakes()
+        val orphan = InquiryDto(id = 900L, listingId = 777L, buyer = "Jan", message = "Pytanie")
+
+        val result = puller(fakes, changes(inquiries = listOf(orphan))).pull()
+            as SyncPuller.Result.Applied
+
+        assertEquals(1, result.deferred)
+        assertEquals(0, fakes.inquiries.rows.size)
+        assertNull(fakes.marker.marker)
+    }
+
+    @Test
+    fun `usuniete ogloszenie znika lokalnie`() = runBlocking {
+        val fakes = Fakes()
+        puller(fakes, changes(animals = listOf(animalDto), listings = listOf(listingDto))).pull()
+        assertEquals(1, fakes.listings.rows.size)
+
+        val tombstone = DeletionDto("listing", 300L, "2026-09-21T13:00:00Z")
+        puller(fakes, changes(deletions = listOf(tombstone))).pull()
+
+        assertEquals(0, fakes.listings.rows.size)
+    }
+
     @Test
     fun `zapisany znacznik jest oddawany backendowi jako since`() = runBlocking {
         val fakes = Fakes()
         fakes.marker.marker = "2026-09-21T10:00:00Z"
         val api = FakeApi(changes())
 
-        SyncPuller(api, fakes.sync, fakes.animals, fakes.events, fakes.treatments, fakes.marker).pull()
+        SyncPuller(
+            api, fakes.sync, fakes.animals, fakes.events, fakes.treatments,
+            fakes.listings, fakes.inquiries, fakes.marker,
+        ).pull()
 
         assertEquals("2026-09-21T10:00:00Z", api.lastSince)
     }

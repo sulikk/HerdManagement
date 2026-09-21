@@ -15,6 +15,9 @@ import com.example.herdmanagementmobile.ui.screens.animals.AnimalListScreen
 import com.example.herdmanagementmobile.ui.screens.assistant.AssistantScreen
 import com.example.herdmanagementmobile.ui.screens.compliance.ComplianceScreen
 import com.example.herdmanagementmobile.ui.screens.events.EventFormScreen
+import com.example.herdmanagementmobile.ui.screens.listings.ListingDetailScreen
+import com.example.herdmanagementmobile.ui.screens.listings.ListingFormScreen
+import com.example.herdmanagementmobile.ui.screens.listings.ListingListScreen
 import com.example.herdmanagementmobile.ui.screens.nfc.NfcScreen
 import com.example.herdmanagementmobile.ui.screens.scanner.ScannerScreen
 import com.example.herdmanagementmobile.ui.screens.settings.SettingsScreen
@@ -51,6 +54,9 @@ fun HerdNavHost(
                 onAssistantClick = {
                     navController.navigate(Route.Assistant.path)
                 },
+                onListingsClick = {
+                    navController.navigate(Route.Listings.path)
+                },
             )
         }
         composable(
@@ -69,6 +75,13 @@ fun HerdNavHost(
                 },
                 onAddTreatment = { animalId ->
                     navController.navigate(Route.TreatmentForm.build(animalId))
+                },
+                onSellClick = { animalId, existingListingId ->
+                    if (existingListingId != null) {
+                        navController.navigate(Route.ListingDetail.build(existingListingId))
+                    } else {
+                        navController.navigate(Route.ListingForm.build(animalId))
+                    }
                 },
                 onDeleted = {
                     navController.popBackStack(Route.AnimalList.path, inclusive = false)
@@ -159,6 +172,51 @@ fun HerdNavHost(
         }
         composable(Route.Assistant.path) {
             AssistantScreen(onBack = { navController.popBackStack() })
+        }
+        composable(Route.Listings.path) {
+            ListingListScreen(
+                onBack = { navController.popBackStack() },
+                onListingClick = { listingId ->
+                    navController.navigate(Route.ListingDetail.build(listingId))
+                },
+            )
+        }
+        composable(
+            route = Route.ListingDetail.path,
+            arguments = listOf(
+                navArgument(Route.ListingDetail.ARG) { type = NavType.LongType },
+            ),
+        ) {
+            ListingDetailScreen(
+                onBack = { navController.popBackStack() },
+                onEdit = { animalId, listingId ->
+                    navController.navigate(Route.ListingForm.build(animalId, listingId))
+                },
+                onDeleted = {
+                    navController.popBackStack(Route.Listings.path, inclusive = false)
+                },
+            )
+        }
+        composable(
+            route = Route.ListingForm.path,
+            arguments = listOf(
+                navArgument(Route.ListingForm.ARG_ANIMAL) { type = NavType.LongType },
+                navArgument(Route.ListingForm.ARG_LISTING) {
+                    type = NavType.LongType
+                    defaultValue = -1L
+                },
+            ),
+        ) {
+            ListingFormScreen(
+                onSaved = { listingId ->
+                    // Po zapisie od razu karta ogłoszenia — tam podejmuje się
+                    // decyzję o publikacji (F12) i sprawdza dane w IRZplus (F14).
+                    navController.navigate(Route.ListingDetail.build(listingId)) {
+                        popUpTo(Route.ListingForm.path) { inclusive = true }
+                    }
+                },
+                onCancel = { navController.popBackStack() },
+            )
         }
     }
 }

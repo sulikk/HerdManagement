@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.herdmanagementmobile.data.repository.AnimalRepository
 import com.example.herdmanagementmobile.data.repository.EventRepository
+import com.example.herdmanagementmobile.data.repository.ListingRepository
 import com.example.herdmanagementmobile.data.repository.TreatmentRepository
 import com.example.herdmanagementmobile.domain.model.Animal
 import com.example.herdmanagementmobile.domain.model.AnimalEvent
@@ -23,6 +24,8 @@ data class AnimalDetailState(
     val animal: Animal? = null,
     val events: List<AnimalEvent> = emptyList(),
     val treatments: List<Treatment> = emptyList(),
+    /** Ogloszenie zajmujace te sztuke - szkic albo opublikowane (zadanie 9). */
+    val activeListingId: Long? = null,
 )
 
 @HiltViewModel
@@ -31,6 +34,7 @@ class AnimalDetailViewModel @Inject constructor(
     private val animalRepository: AnimalRepository,
     private val eventRepository: EventRepository,
     treatmentRepository: TreatmentRepository,
+    private val listingRepository: ListingRepository,
 ) : ViewModel() {
 
     val animalId: Long = savedStateHandle.get<Long>(Route.AnimalDetail.ARG) ?: -1L
@@ -56,6 +60,13 @@ class AnimalDetailViewModel @Inject constructor(
     fun submitToIrz(eventId: Long) {
         viewModelScope.launch { eventRepository.submitToIrz(eventId) }
     }
+
+    /**
+     * Sprawdza, czy zwierze ma juz aktywne ogloszenie. Decyduje, czy przycisk
+     * prowadzi do formularza, czy do istniejacej karty ogloszenia.
+     */
+    suspend fun activeListingId(): Long? =
+        if (animalId <= 0) null else listingRepository.activeListingFor(animalId)?.id
 
     fun delete(onDone: () -> Unit) {
         if (animalId <= 0) return

@@ -37,5 +37,27 @@ sealed class Route(val path: String) {
     data object Statistics : Route("statistics")
 
     data object Assistant : Route("assistant")
+
+    /** Lista ogłoszeń sprzedażowych hodowcy (zadanie 9). */
     data object Listings : Route("listings")
+
+    data object ListingDetail : Route("listings/{listingId}") {
+        const val ARG = "listingId"
+        fun build(listingId: Long): String = "listings/$listingId"
+    }
+
+    /**
+     * Formularz ogłoszenia. Zawsze wychodzi od zwierzęcia — dzięki temu da się
+     * wypełnić pola danymi z jego karty (F13). `listingId` ustawione = edycja.
+     */
+    data object ListingForm : Route("animals/{animalId}/listings/form?listingId={listingId}") {
+        const val ARG_ANIMAL = "animalId"
+        const val ARG_LISTING = "listingId"
+        fun build(animalId: Long, listingId: Long? = null): String =
+            if (listingId == null) {
+                "animals/$animalId/listings/form"
+            } else {
+                "animals/$animalId/listings/form?listingId=$listingId"
+            }
+    }
 }

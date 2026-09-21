@@ -20,6 +20,8 @@ object SyncContract {
         const val ANIMAL = "animal"
         const val EVENT = "event"
         const val TREATMENT = "treatment"
+        const val LISTING = "listing"
+        const val INQUIRY = "inquiry"
     }
 
     object Operation {
@@ -32,6 +34,15 @@ object SyncContract {
 
         /** Przekazanie wyniku zgłoszenia IRZ do backendu aplikacji. */
         const val IRZ_RESULT = "IRZ_RESULT"
+
+        /** Publikacja ogłoszenia — wyłącznie po jawnym potwierdzeniu (F12). */
+        const val PUBLISH = "PUBLISH"
+
+        const val WITHDRAW = "WITHDRAW"
+        const val MARK_SOLD = "MARK_SOLD"
+
+        /** Weryfikacja ogłoszenia wobec rejestru IRZplus — odznaka F14. */
+        const val VERIFY = "VERIFY"
     }
 
     object Status {

@@ -1,9 +1,13 @@
+import logging
 from collections.abc import Iterator
+from enum import Enum
 
 from sqlalchemy import Engine, create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
 engine = create_engine(settings.database_url, connect_args=connect_args, future=True)
@@ -31,24 +35,76 @@ def init_db(bind: Engine = engine) -> None:
 
 
 def add_missing_columns(bind: Engine) -> list[str]:
-    """Dokłada do istniejących tabel nowe kolumny dopuszczające NULL.
+    """Dokłada do istniejących tabel kolumny, które doszły do modelu.
 
     `create_all` nie modyfikuje istniejących tabel, więc po rozbudowie modelu stara
     baza deweloperska (herd.db) nie miałaby nowych pól. Ta prosta migracja wystarcza
     na etap prototypu; zmiany typów czy usuwanie kolumn wymagałyby Alembica.
+
+    Kolumny ``NOT NULL`` wymagają wartości domyślnej — SQLite nie ma czym wypełnić
+    istniejących wierszy. Gdy model podaje stały default (np. ``status`` ogłoszenia),
+    dokładamy je jako ``NOT NULL DEFAULT ...``; bez defaultu kolumna jest pomijana,
+    bo takiej migracji nie da się wykonać bezpiecznie w locie.
     """
     added: list[str] = []
     inspector = inspect(bind)
     with bind.begin() as conn:
         for table in Base.metadata.sorted_tables:
+            # Tabeli może jeszcze nie być (create_all tworzy ją dopiero obok) —
+            # wtedy nie ma czego uzupełniać.
+            if not inspector.has_table(table.name):
+                continue
             existing = {c["name"] for c in inspector.get_columns(table.name)}
             for column in table.columns:
-                if column.name in existing or not column.nullable:
+                if column.name in existing:
                     continue
+
                 ddl_type = column.type.compile(dialect=bind.dialect)
-                conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {ddl_type}'))
+                constraint = ""
+                if not column.nullable:
+                    literal = _default_literal(column)
+                    if literal is None:
+                        logger.warning(
+                            "Pomijam kolumnę %s.%s — NOT NULL bez wartości domyślnej "
+                            "wymaga ręcznej migracji.",
+                            table.name,
+                            column.name,
+                        )
+                        continue
+                    constraint = f" NOT NULL DEFAULT {literal}"
+
+                conn.execute(
+                    text(
+                        f'ALTER TABLE "{table.name}" '
+                        f'ADD COLUMN "{column.name}" {ddl_type}{constraint}'
+                    )
+                )
                 added.append(f"{table.name}.{column.name}")
     return added
+
+
+def _default_literal(column) -> str | None:
+    """Stała domyślna kolumny w postaci literału SQL albo ``None``, gdy jej nie ma.
+
+    Obsługuje tylko wartości stałe. Default wyliczany funkcją (jak ``_utcnow``)
+    zależy od momentu zapisu i nie ma sensu jako wypełniacz dla starych wierszy.
+    """
+    default = column.default
+    if default is None or not getattr(default, "is_scalar", False):
+        return None
+
+    value = default.arg
+    if isinstance(value, Enum):
+        # SQLAlchemy zapisuje enumy pod nazwą składowej (DRAFT), nie wartością.
+        value = value.name
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        escaped = value.replace("'", "''")
+        return f"'{escaped}'"
+    return None
 
 
 def backfill_sync_columns(bind: Engine) -> int:

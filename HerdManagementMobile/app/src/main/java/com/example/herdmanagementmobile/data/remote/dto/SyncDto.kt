@@ -17,11 +17,13 @@ data class SyncChangesDto(
     val animals: List<AnimalDto> = emptyList(),
     val events: List<EventDto> = emptyList(),
     val treatments: List<TreatmentDto> = emptyList(),
+    val listings: List<ListingDto> = emptyList(),
+    val inquiries: List<InquiryDto> = emptyList(),
     val deletions: List<DeletionDto> = emptyList(),
 ) {
     val isEmpty: Boolean
-        get() = animals.isEmpty() && events.isEmpty() &&
-            treatments.isEmpty() && deletions.isEmpty()
+        get() = animals.isEmpty() && events.isEmpty() && treatments.isEmpty() &&
+            listings.isEmpty() && inquiries.isEmpty() && deletions.isEmpty()
 }
 
 /** Rekord usunięty na serwerze — trzeba go skasować także lokalnie. */

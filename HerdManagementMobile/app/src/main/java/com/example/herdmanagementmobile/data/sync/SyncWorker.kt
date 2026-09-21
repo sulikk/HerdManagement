@@ -6,11 +6,13 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.example.herdmanagementmobile.data.local.dao.AnimalDao
 import com.example.herdmanagementmobile.data.local.dao.EventDao
+import com.example.herdmanagementmobile.data.local.dao.ListingDao
 import com.example.herdmanagementmobile.data.local.dao.SyncDao
 import com.example.herdmanagementmobile.data.local.entity.IdMappingEntity
 import com.example.herdmanagementmobile.data.local.entity.SyncQueueEntity
 import com.example.herdmanagementmobile.data.remote.HerdApiService
 import com.example.herdmanagementmobile.data.remote.dto.AnimalDto
+import com.example.herdmanagementmobile.data.remote.dto.ListingWriteDto
 import com.example.herdmanagementmobile.data.remote.dto.TreatmentDto
 import com.example.herdmanagementmobile.data.remote.dto.toDto
 import com.example.herdmanagementmobile.data.remote.dto.toIrzResultDto
@@ -51,12 +53,16 @@ class SyncWorker @AssistedInject constructor(
     private val syncDao: SyncDao,
     private val eventDao: EventDao,
     private val animalDao: AnimalDao,
+    private val listingDao: ListingDao,
     private val api: HerdApiService,
     private val irzplus: IrzplusClient,
     private val syncManager: SyncManager,
     private val syncPuller: SyncPuller,
     private val json: Json,
 ) : CoroutineWorker(context, params) {
+
+    /** Statusy, przy ktorych ogloszenie wciaz zajmuje zwierze po stronie backendu. */
+    private val ACTIVE_STATUSES = setOf("draft", "published")
 
     override suspend fun doWork(): Result = syncManager.mutex.withLock {
         var retryAttempt = 0
@@ -123,6 +129,17 @@ class SyncWorker @AssistedInject constructor(
             SyncContract.Entity.TREATMENT to SyncContract.Operation.CREATE -> pushTreatment(entry)
             SyncContract.Entity.TREATMENT to SyncContract.Operation.DELETE ->
                 deleteRemote(entry, SyncContract.Entity.TREATMENT) { api.deleteTreatment(it) }
+            SyncContract.Entity.LISTING to SyncContract.Operation.CREATE -> pushListing(entry)
+            SyncContract.Entity.LISTING to SyncContract.Operation.UPDATE -> updateListing(entry)
+            SyncContract.Entity.LISTING to SyncContract.Operation.PUBLISH ->
+                listingAction(entry) { api.publishListing(it) }
+            SyncContract.Entity.LISTING to SyncContract.Operation.WITHDRAW ->
+                listingAction(entry) { api.withdrawListing(it) }
+            SyncContract.Entity.LISTING to SyncContract.Operation.MARK_SOLD ->
+                listingAction(entry) { api.markListingSold(it) }
+            SyncContract.Entity.LISTING to SyncContract.Operation.VERIFY -> verifyListing(entry)
+            SyncContract.Entity.LISTING to SyncContract.Operation.DELETE ->
+                deleteRemote(entry, SyncContract.Entity.LISTING) { api.deleteListing(it) }
             else -> error("Nieznana operacja: ${entry.entity}/${entry.operation}")
         }
     }
@@ -206,6 +223,99 @@ class SyncWorker @AssistedInject constructor(
         }
         syncDao.deleteMapping(entity, payload.localId)
     }
+
+    // --- Ogłoszenia sprzedażowe (zadanie 9) ------------------------------
+
+    private suspend fun pushListing(entry: SyncQueueEntity) {
+        ensureRemoteListing(localIdOf(entry))
+    }
+
+    private suspend fun updateListing(entry: SyncQueueEntity) {
+        val localId = localIdOf(entry)
+        val remoteId = syncDao.remoteIdFor(SyncContract.Entity.LISTING, localId)
+        if (remoteId == null) {
+            ensureRemoteListing(localId) // powstanie od razu z aktualną treścią
+            return
+        }
+        val body = listingBody(localId) ?: return
+        try {
+            api.updateListing(remoteId, body)
+        } catch (e: HttpException) {
+            if (e.code() != 404) throw e
+            syncDao.deleteMapping(SyncContract.Entity.LISTING, localId)
+            ensureRemoteListing(localId)
+        }
+    }
+
+    /**
+     * Akcja zmieniająca stan ogłoszenia (publikacja, wycofanie, sprzedaż).
+     *
+     * Publikacja trafia tu wyłącznie po potwierdzeniu przez użytkownika — kolejka
+     * jedynie dowozi jego decyzję do serwera (F12).
+     */
+    private suspend fun listingAction(entry: SyncQueueEntity, call: suspend (Long) -> Any) {
+        val localId = localIdOf(entry)
+        val remoteId = ensureRemoteListing(localId) ?: return
+        try {
+            call(remoteId)
+        } catch (e: HttpException) {
+            if (e.code() != 404) throw e
+            syncDao.deleteMapping(SyncContract.Entity.LISTING, localId)
+            ensureRemoteListing(localId)?.let { call(it) }
+        }
+    }
+
+    /**
+     * Weryfikacja wobec rejestru IRZplus (F14). Wynik zapisujemy od razu lokalnie,
+     * żeby odznaka pojawiła się bez czekania na pobranie zmian.
+     */
+    private suspend fun verifyListing(entry: SyncQueueEntity) {
+        val localId = localIdOf(entry)
+        val remoteId = ensureRemoteListing(localId) ?: return
+        val result = api.verifyListing(remoteId)
+        val current = listingDao.getById(localId) ?: return
+        listingDao.update(
+            current.copy(
+                irzVerified = result.irzVerified,
+                irzVerifiedAt = LocalDateTime.now(),
+                irzMessage = result.message,
+            ),
+        )
+    }
+
+    /** Zdalne id ogłoszenia; przy braku — zakłada je na serwerze z danych lokalnych. */
+    private suspend fun ensureRemoteListing(localId: Long): Long? {
+        syncDao.remoteIdFor(SyncContract.Entity.LISTING, localId)?.let { return it }
+        val body = listingBody(localId) ?: return null
+        val remote = try {
+            api.createListing(body)
+        } catch (e: HttpException) {
+            if (e.code() != 409) throw e
+            // Serwer ma już aktywne ogłoszenie tego zwierzęcia — przejmij je,
+            // zamiast zakładać drugie (backend i tak na to nie pozwoli).
+            val existing = api.getChanges(null).listings
+                .firstOrNull { it.animalId == body.animalId && it.status in ACTIVE_STATUSES }
+                ?: throw e
+            api.updateListing(existing.id, body)
+        }
+        syncDao.putMapping(IdMappingEntity(SyncContract.Entity.LISTING, localId, remote.id))
+        return remote.id
+    }
+
+    /** Treść ogłoszenia z lokalnej bazy, z podmienionym zdalnym id zwierzęcia. */
+    private suspend fun listingBody(localId: Long): ListingWriteDto? {
+        val listing = listingDao.getById(localId) ?: return null
+        val remoteAnimalId = ensureRemoteAnimal(listing.animalId) ?: return null
+        return ListingWriteDto(
+            animalId = remoteAnimalId,
+            price = listing.price,
+            description = listing.description,
+            photoUri = listing.photoUri,
+        )
+    }
+
+    private fun localIdOf(entry: SyncQueueEntity): Long =
+        json.decodeFromString<LocalIdPayload>(entry.payload).localId
 
     // --- Zdarzenia -------------------------------------------------------
 
