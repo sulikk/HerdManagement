@@ -3,20 +3,38 @@ package com.example.herdmanagementmobile.ui.screens.nfc
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.Intent
 import android.nfc.NdefRecord
 import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.nfc.tech.Ndef
+import android.provider.Settings
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Nfc
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -26,6 +44,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,11 +52,23 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.herdmanagementmobile.domain.validation.EarTag
+import kotlinx.coroutines.delay
 
+/**
+ * Odczyt kolczyka elektronicznego przez wbudowany moduł NFC.
+ *
+ * Ekran musi uczciwie powiedzieć, czego ta droga nie potrafi: typowe kolczyki
+ * bydlęce pracują w paśmie LF 134 kHz (ISO 11784/11785), którego telefon nie
+ * obsługuje. Bez tej informacji użytkownik przykłada telefon do ucha krowy
+ * i wnioskuje, że aplikacja jest zepsuta.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NfcScreen(
@@ -60,28 +91,34 @@ fun NfcScreen(
             )
         },
     ) { padding ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
+                .padding(padding)
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
         ) {
             when {
-                nfcAdapter == null -> StatusMessage(
-                    title = "NFC niedostępne",
-                    message = "To urządzenie nie ma modułu NFC. Skorzystaj ze skanera kodu kreskowego.",
+                nfcAdapter == null -> Unavailable(
+                    title = "To urządzenie nie ma modułu NFC",
+                    message = "Numer kolczyka wpisz ręcznie albo użyj skanera kodu kreskowego.",
                 )
 
-                !nfcAdapter.isEnabled -> StatusMessage(
-                    title = "NFC wyłączone",
-                    message = "Włącz NFC w ustawieniach systemu i spróbuj ponownie.",
+                !nfcAdapter.isEnabled -> Unavailable(
+                    title = "NFC jest wyłączone",
+                    message = "Włącz moduł NFC w ustawieniach systemu, a potem wróć na ten ekran.",
+                    action = "Otwórz ustawienia NFC" to {
+                        context.startActivity(Intent(Settings.ACTION_NFC_SETTINGS))
+                    },
                 )
 
-                activity == null -> StatusMessage(
-                    title = "Błąd",
-                    message = "Nie można uruchomić skanera NFC z tego kontekstu.",
+                activity == null -> Unavailable(
+                    title = "Nie można uruchomić odczytu",
+                    message = "Spróbuj ponownie po ponownym otwarciu ekranu.",
                 )
 
-                else -> NfcReaderActive(
+                else -> ReaderActive(
                     activity = activity,
                     nfcAdapter = nfcAdapter,
                     onScanned = onScanned,
@@ -92,18 +129,25 @@ fun NfcScreen(
 }
 
 @Composable
-private fun BoxScope.NfcReaderActive(
+private fun ReaderActive(
     activity: Activity,
     nfcAdapter: NfcAdapter,
     onScanned: (String) -> Unit,
 ) {
     val onScannedState by rememberUpdatedState(onScanned)
     var detected by remember { mutableStateOf(false) }
+    var unreadable by remember { mutableStateOf(false) }
 
     DisposableEffect(nfcAdapter) {
         val callback = NfcAdapter.ReaderCallback { tag ->
             if (detected) return@ReaderCallback
-            val payload = extractEarTagPayload(tag) ?: return@ReaderCallback
+            val payload = extractEarTagPayload(tag)
+            if (payload == null) {
+                // Tag był, ale nie ma w nim numeru kolczyka — bez tego sygnału
+                // użytkownik trzymałby telefon przy uchu krowy w nieskończoność.
+                activity.runOnUiThread { unreadable = true }
+                return@ReaderCallback
+            }
             detected = true
             activity.runOnUiThread { onScannedState(payload) }
         }
@@ -116,44 +160,150 @@ private fun BoxScope.NfcReaderActive(
         onDispose { nfcAdapter.disableReaderMode(activity) }
     }
 
-    Column(
+    LaunchedEffect(unreadable) {
+        if (unreadable) {
+            delay(3000)
+            unreadable = false
+        }
+    }
+
+    PulsingNfcIcon()
+    Spacer(Modifier.height(24.dp))
+
+    Text(
+        text = "Przyłóż kolczyk do tyłu telefonu",
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+        textAlign = TextAlign.Center,
+    )
+    Spacer(Modifier.height(8.dp))
+    Text(
+        text = "Trzymaj nieruchomo przez chwilę. Odczyt nastąpi automatycznie.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+    )
+
+    Spacer(Modifier.height(24.dp))
+
+    if (unreadable) {
+        NoteCard(
+            icon = Icons.Default.ErrorOutline,
+            text = "Wykryto tag, ale nie zawiera numeru kolczyka w rozpoznawanym formacie.",
+            error = true,
+        )
+    } else {
+        NoteCard(
+            icon = Icons.Default.Info,
+            text = "Standardowe kolczyki bydlęce LF 134 kHz (ISO 11784/11785) nie są " +
+                "odczytywane przez moduł NFC telefonu — wymagają zewnętrznego czytnika. " +
+                "Ten ekran obsługuje tagi NFC oraz kolczyki z zapisanym numerem w NDEF.",
+        )
+    }
+}
+
+/**
+ * Pulsująca ikona — jedyny sygnał, że telefon faktycznie nasłuchuje.
+ * Statyczna grafika nie odróżnia stanu „czekam na tag” od zawieszonego ekranu.
+ */
+@Composable
+private fun PulsingNfcIcon() {
+    val transition = rememberInfiniteTransition(label = "nfc")
+    val scale by transition.animateFloat(
+        initialValue = 0.92f,
+        targetValue = 1.08f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "pulse",
+    )
+
+    Box(
         modifier = Modifier
-            .align(Alignment.Center)
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .size(140.dp)
+            .scale(scale)
+            .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+        contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = Icons.Default.Nfc,
             contentDescription = null,
-            modifier = Modifier.size(96.dp),
-            tint = MaterialTheme.colorScheme.primary,
-        )
-        Text(
-            text = "Przyłóż kolczyk lub tag NFC\ndo tyłu telefonu",
-            style = MaterialTheme.typography.titleMedium,
-            textAlign = TextAlign.Center,
-        )
-        Text(
-            text = "UWAGA: standardowe kolczyki bydlęce LF 134 kHz nie są odczytywane przez wbudowany moduł NFC telefonu. Wymagają zewnętrznego czytnika Bluetooth zgodnego z ISO 11784/11785.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
+            modifier = Modifier.size(72.dp),
+            tint = MaterialTheme.colorScheme.onPrimaryContainer,
         )
     }
 }
 
 @Composable
-private fun BoxScope.StatusMessage(title: String, message: String) {
-    Column(
-        modifier = Modifier
-            .align(Alignment.Center)
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+private fun NoteCard(icon: ImageVector, text: String, error: Boolean = false) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = if (error) {
+                MaterialTheme.colorScheme.errorContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerLow
+            },
+        ),
+        modifier = Modifier.fillMaxWidth(),
     ) {
-        Text(title, style = MaterialTheme.typography.titleLarge)
-        Text(message, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (error) {
+                    MaterialTheme.colorScheme.onErrorContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (error) {
+                    MaterialTheme.colorScheme.onErrorContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun Unavailable(
+    title: String,
+    message: String,
+    action: Pair<String, () -> Unit>? = null,
+) {
+    Icon(
+        imageVector = Icons.Default.Nfc,
+        contentDescription = null,
+        modifier = Modifier.size(64.dp),
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(Modifier.height(16.dp))
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+        textAlign = TextAlign.Center,
+    )
+    Spacer(Modifier.height(8.dp))
+    Text(
+        text = message,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+    )
+    action?.let { (label, onClick) ->
+        Spacer(Modifier.height(24.dp))
+        Button(onClick = onClick) { Text(label) }
     }
 }
 

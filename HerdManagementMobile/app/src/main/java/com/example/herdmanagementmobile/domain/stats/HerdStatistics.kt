@@ -2,6 +2,7 @@ package com.example.herdmanagementmobile.domain.stats
 
 import com.example.herdmanagementmobile.domain.model.Animal
 import com.example.herdmanagementmobile.domain.model.AnimalEvent
+import com.example.herdmanagementmobile.domain.model.ComplianceItem
 import com.example.herdmanagementmobile.domain.model.EventType
 import com.example.herdmanagementmobile.domain.model.IrzStatus
 import com.example.herdmanagementmobile.domain.model.Sex
@@ -10,8 +11,35 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.time.temporal.ChronoUnit
 
-/** Grupa wiekowo-płciowa (uproszczony podział stosowany w ewidencji bydła). */
-enum class AgeGroup { CALVES, YOUNGSTOCK, COWS, BULLS, ADULTS_OTHER, UNKNOWN_AGE }
+/**
+ * Grupa wiekowo-płciowa według nazewnictwa hodowlanego.
+ *
+ * Wcześniej płeć rozróżnialiśmy dopiero powyżej 24 miesięcy, więc roczny byczek
+ * trafiał do bezpłciowej „młodzieży” i znikał z obrazu stada jako samiec.
+ * Hodowca myśli inaczej: jałówka i byczek to dwie różne kategorie użytkowe
+ * od chwili, gdy przestają być cielętami.
+ */
+enum class AgeGroup {
+    /** Cielęta obu płci, do [HerdStats.CALF_MONTHS] miesięcy. */
+    CALVES,
+
+    /** Jałówki — samice od odsadzenia do [HerdStats.ADULT_MONTHS] miesięcy. */
+    HEIFERS,
+
+    /** Byczki i opasy — samce w tym samym przedziale wieku. */
+    YOUNG_BULLS,
+
+    /** Krowy — samice dorosłe. */
+    COWS,
+
+    /** Buhaje — samce dorosłe. */
+    BULLS,
+
+    /** Sztuki o nieokreślonej płci, poza wiekiem cielęcym. */
+    OTHER_SEX,
+
+    UNKNOWN_AGE,
+}
 
 data class MonthlyMovement(
     val month: YearMonth,
@@ -22,6 +50,25 @@ data class MonthlyMovement(
 ) {
     val inflow: Int get() = births + arrivals
     val outflow: Int get() = departures + deaths
+}
+
+/**
+ * Terminowość zgłoszeń do IRZplus.
+ *
+ * Liczymy tylko zdarzenia, które faktycznie trafiły do rejestru i mają znacznik
+ * wysyłki — reszta nic nie mówi o dyscyplinie zgłoszeń, a zaniżałaby wynik.
+ * To najbliższa miara celu całej pracy: czy aplikacja pomaga zdążyć w ustawowym
+ * terminie 7 dni.
+ */
+data class ReportingStats(
+    val onTime: Int = 0,
+    val late: Int = 0,
+) {
+    val total: Int get() = onTime + late
+
+    /** Odsetek zgłoszeń w terminie; `null`, gdy nie ma jeszcze czego liczyć. */
+    val onTimePercent: Int?
+        get() = if (total == 0) null else (onTime * 100) / total
 }
 
 data class HerdStats(
@@ -38,6 +85,12 @@ data class HerdStats(
     val animalsInWithdrawal: Int,
     val treatmentsLast12Months: Int,
     val irzStatusCounts: Map<IrzStatus, Int>,
+    /** Średni wiek sztuk w stadzie, w miesiącach; `null`, gdy brak dat urodzenia. */
+    val averageAgeMonths: Int? = null,
+    /** Liczebność według płci — niezależnie od wieku. */
+    val sexCounts: Map<Sex, Int> = emptyMap(),
+    /** Terminowość zgłoszeń do IRZplus — miara tego, po co powstała ta aplikacja. */
+    val reporting: ReportingStats = ReportingStats(),
 ) {
     val movementTotals: MonthlyMovement
         get() = movements.fold(MonthlyMovement(movements.lastOrNull()?.month ?: YearMonth.now())) { acc, m ->
@@ -93,7 +146,32 @@ object HerdStatistics {
             irzStatusCounts = IrzStatus.entries.associateWith { status ->
                 events.count { it.irzStatus == status }
             },
+            averageAgeMonths = averageAgeMonths(present, today),
+            sexCounts = Sex.entries.associateWith { sex -> present.count { it.sex == sex } },
+            reporting = reporting(events),
         )
+    }
+
+    /** Średni wiek sztuk, które mają podaną datę urodzenia. */
+    private fun averageAgeMonths(animals: List<Animal>, today: LocalDate): Int? {
+        val ages = animals.mapNotNull { animal ->
+            animal.birthDate?.let { ChronoUnit.MONTHS.between(it, today) }
+        }
+        return if (ages.isEmpty()) null else (ages.sum() / ages.size).toInt()
+    }
+
+    /**
+     * Zgłoszenie uznajemy za terminowe, gdy trafiło do rejestru najpóźniej
+     * siódmego dnia od zdarzenia. Zdarzenia jeszcze niewysłane nie wchodzą
+     * do rachunku — nie są spóźnione, dopóki termin nie minie.
+     */
+    private fun reporting(events: List<AnimalEvent>): ReportingStats {
+        val submitted = events.filter { it.irzSubmittedAt != null }
+        val onTime = submitted.count { event ->
+            val sentOn = event.irzSubmittedAt!!.toLocalDate()
+            !sentOn.isAfter(event.eventDate.plusDays(ComplianceItem.REPORTING_DAYS))
+        }
+        return ReportingStats(onTime = onTime, late = submitted.size - onTime)
     }
 
     /** Zwierzę jest w stadzie, jeśli jego najnowsze zdarzenie nie jest ubyciem ani padnięciem. */
@@ -105,14 +183,15 @@ object HerdStatistics {
     fun ageGroup(animal: Animal, today: LocalDate): AgeGroup {
         val birth = animal.birthDate ?: return AgeGroup.UNKNOWN_AGE
         val months = ChronoUnit.MONTHS.between(birth, today)
-        return when {
-            months < HerdStats.CALF_MONTHS -> AgeGroup.CALVES
-            months < HerdStats.ADULT_MONTHS -> AgeGroup.YOUNGSTOCK
-            else -> when (animal.sex) {
-                Sex.FEMALE -> AgeGroup.COWS
-                Sex.MALE -> AgeGroup.BULLS
-                Sex.OTHER -> AgeGroup.ADULTS_OTHER
-            }
+        if (months < HerdStats.CALF_MONTHS) return AgeGroup.CALVES
+
+        // Powyżej wieku cielęcego płeć decyduje o kategorii użytkowej,
+        // a wiek tylko o tym, czy sztuka jest już dorosła.
+        val adult = months >= HerdStats.ADULT_MONTHS
+        return when (animal.sex) {
+            Sex.FEMALE -> if (adult) AgeGroup.COWS else AgeGroup.HEIFERS
+            Sex.MALE -> if (adult) AgeGroup.BULLS else AgeGroup.YOUNG_BULLS
+            Sex.OTHER -> AgeGroup.OTHER_SEX
         }
     }
 

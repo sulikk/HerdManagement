@@ -31,6 +31,20 @@ class HerdStatisticsTest {
         status: IrzStatus = IrzStatus.PENDING,
     ) = AnimalEvent(id = nextId++, animalId = animalId, type = type, eventDate = date, irzStatus = status)
 
+    /** Zdarzenie wysłane do rejestru w konkretnym dniu — do testów terminowości. */
+    private fun submitted(
+        animalId: Long,
+        date: LocalDate,
+        sentOn: LocalDate,
+    ) = AnimalEvent(
+        id = nextId++,
+        animalId = animalId,
+        type = EventType.BIRTH,
+        eventDate = date,
+        irzStatus = IrzStatus.CONFIRMED,
+        irzSubmittedAt = sentOn.atTime(10, 0),
+    )
+
     @Test
     fun `puste dane dają zerowe statystyki`() {
         val stats = HerdStatistics.compute(emptyList(), emptyList(), emptyList(), today)
@@ -95,11 +109,56 @@ class HerdStatisticsTest {
         val groups = HerdStatistics.compute(animals, emptyList(), emptyList(), today).ageGroups
 
         assertEquals(1, groups[AgeGroup.CALVES])
-        assertEquals(2, groups[AgeGroup.YOUNGSTOCK])
+        // Sztuki 6–24 mies. rozdzielone wg płci: jałówka i byczek osobno.
+        assertEquals(1, groups[AgeGroup.HEIFERS])
+        assertEquals(1, groups[AgeGroup.YOUNG_BULLS])
         assertEquals(1, groups[AgeGroup.COWS])
         assertEquals(1, groups[AgeGroup.BULLS])
-        assertEquals(1, groups[AgeGroup.ADULTS_OTHER])
+        assertEquals(1, groups[AgeGroup.OTHER_SEX])
         assertEquals(1, groups[AgeGroup.UNKNOWN_AGE])
+    }
+
+    @Test
+    fun `roczny samiec jest byczkiem a nie bezplciowa mlodzieza`() {
+        // Zgłoszone przez użytkownika: byk po pierwszym roku wpadał do wspólnej
+        // „młodzieży” i znikał z obrazu stada jako samiec.
+        val byczek = animal(birth = today.minusMonths(13), sex = Sex.MALE)
+        val jalowka = animal(birth = today.minusMonths(13), sex = Sex.FEMALE)
+
+        val groups = HerdStatistics
+            .compute(listOf(byczek, jalowka), emptyList(), emptyList(), today)
+            .ageGroups
+
+        assertEquals(1, groups[AgeGroup.YOUNG_BULLS])
+        assertEquals(1, groups[AgeGroup.HEIFERS])
+    }
+
+    @Test
+    fun `granica dorosloci wypada na 24 miesiacu`() {
+        val przed = animal(birth = today.minusMonths(23), sex = Sex.FEMALE)
+        val po = animal(birth = today.minusMonths(24), sex = Sex.FEMALE)
+
+        val groups = HerdStatistics
+            .compute(listOf(przed, po), emptyList(), emptyList(), today)
+            .ageGroups
+
+        assertEquals(1, groups[AgeGroup.HEIFERS])
+        assertEquals(1, groups[AgeGroup.COWS])
+    }
+
+    @Test
+    fun `podzial na plec obejmuje cale stado`() {
+        val animals = listOf(
+            animal(sex = Sex.FEMALE),
+            animal(sex = Sex.FEMALE),
+            animal(sex = Sex.MALE),
+        )
+
+        val counts = HerdStatistics.compute(animals, emptyList(), emptyList(), today).sexCounts
+
+        assertEquals(2, counts[Sex.FEMALE])
+        assertEquals(1, counts[Sex.MALE])
+        assertEquals(0, counts[Sex.OTHER])
     }
 
     @Test
@@ -169,5 +228,73 @@ class HerdStatisticsTest {
         assertEquals(1, counts[IrzStatus.REJECTED])
         assertEquals(1, counts[IrzStatus.PENDING])
         assertEquals(0, counts[IrzStatus.SUBMITTED])
+    }
+
+    // --- Średni wiek ----------------------------------------------------
+
+    @Test
+    fun `sredni wiek liczy tylko sztuki w stadzie`() {
+        val a = animal(birth = today.minusMonths(10))
+        val b = animal(birth = today.minusMonths(20))
+
+        val stats = HerdStatistics.compute(listOf(a, b), emptyList(), emptyList(), today)
+
+        assertEquals(15, stats.averageAgeMonths)
+    }
+
+    @Test
+    fun `sredni wiek jest nieznany gdy brakuje dat urodzenia`() {
+        val stats = HerdStatistics.compute(listOf(animal(birth = null)), emptyList(), emptyList(), today)
+
+        assertEquals(null, stats.averageAgeMonths)
+    }
+
+    // --- Terminowość zgłoszeń -------------------------------------------
+
+    @Test
+    fun `zgloszenie w siodmym dniu jest jeszcze terminowe`() {
+        val a = animal()
+        val events = listOf(submitted(a.id, today.minusDays(7), sentOn = today))
+
+        val stats = HerdStatistics.compute(listOf(a), events, emptyList(), today)
+
+        assertEquals(1, stats.reporting.onTime)
+        assertEquals(0, stats.reporting.late)
+        assertEquals(100, stats.reporting.onTimePercent)
+    }
+
+    @Test
+    fun `zgloszenie osmego dnia jest spoznione`() {
+        val a = animal()
+        val events = listOf(submitted(a.id, today.minusDays(8), sentOn = today))
+
+        val stats = HerdStatistics.compute(listOf(a), events, emptyList(), today)
+
+        assertEquals(0, stats.reporting.onTime)
+        assertEquals(1, stats.reporting.late)
+        assertEquals(0, stats.reporting.onTimePercent)
+    }
+
+    @Test
+    fun `niewyslane zdarzenia nie wchodza do terminowosci`() {
+        // Zdarzenie bez znacznika wysyłki nie jest spóźnione — po prostu czeka.
+        val a = animal()
+        val events = listOf(
+            event(a.id, EventType.BIRTH, today.minusDays(30)),
+            submitted(a.id, today.minusDays(2), sentOn = today),
+        )
+
+        val stats = HerdStatistics.compute(listOf(a), events, emptyList(), today)
+
+        assertEquals(1, stats.reporting.total)
+        assertEquals(1, stats.reporting.onTime)
+    }
+
+    @Test
+    fun `bez zadnych wyslanych zgloszen odsetek jest nieznany`() {
+        val stats = HerdStatistics.compute(emptyList(), emptyList(), emptyList(), today)
+
+        assertEquals(0, stats.reporting.total)
+        assertEquals(null, stats.reporting.onTimePercent)
     }
 }

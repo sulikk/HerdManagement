@@ -1,9 +1,14 @@
 package com.example.herdmanagementmobile.ui.screens.scanner
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.OptIn as AndroidOptIn
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
@@ -15,16 +20,21 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.FlashlightOff
+import androidx.compose.material.icons.filled.FlashlightOn
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -32,7 +42,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -54,7 +66,19 @@ import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import kotlinx.coroutines.delay
 
+private val SCRIM = Color.Black.copy(alpha = 0.6f)
+
+/**
+ * Skaner kodu z kolczyka.
+ *
+ * Dwie rzeczy, które decydują o tym, czy ekran jest użyteczny w oborze:
+ * latarka (kolczyk rzadko bywa w dobrym świetle) i informacja zwrotna przy
+ * nieudanym odczycie. Wcześniej kod z błędną cyfrą kontrolną był po cichu
+ * pomijany — użytkownik celował w kolczyk i nie wiedział, dlaczego nic się
+ * nie dzieje.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ScannerScreen(
@@ -68,21 +92,62 @@ fun ScannerScreen(
                 == PackageManager.PERMISSION_GRANTED,
         )
     }
+    var askedOnce by remember { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
-    ) { granted -> hasPermission = granted }
+    ) { granted ->
+        hasPermission = granted
+        askedOnce = true
+    }
 
     LaunchedEffect(Unit) {
         if (!hasPermission) permissionLauncher.launch(Manifest.permission.CAMERA)
+    }
+
+    var camera by remember { mutableStateOf<Camera?>(null) }
+    var torchOn by remember { mutableStateOf(false) }
+    var detected by remember { mutableStateOf(false) }
+    var rejected by remember { mutableStateOf<String?>(null) }
+
+    // Komunikat o nieudanym odczycie znika sam — przy kolejnej klatce i tak
+    // pojawi się na nowo, a wiszący na stałe zasłaniałby obraz.
+    LaunchedEffect(rejected) {
+        if (rejected != null) {
+            delay(2500)
+            rejected = null
+        }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Skanuj kolczyk") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Black,
+                    titleContentColor = Color.White,
+                    navigationIconContentColor = Color.White,
+                    actionIconContentColor = Color.White,
+                ),
                 navigationIcon = {
                     IconButton(onClick = onCancel) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Wróć")
+                    }
+                },
+                actions = {
+                    if (hasPermission && camera?.cameraInfo?.hasFlashUnit() == true) {
+                        IconButton(onClick = {
+                            torchOn = !torchOn
+                            camera?.cameraControl?.enableTorch(torchOn)
+                        }) {
+                            Icon(
+                                imageVector = if (torchOn) {
+                                    Icons.Default.FlashlightOn
+                                } else {
+                                    Icons.Default.FlashlightOff
+                                },
+                                contentDescription = if (torchOn) "Wyłącz latarkę" else "Włącz latarkę",
+                            )
+                        }
                     }
                 },
             )
@@ -91,43 +156,133 @@ fun ScannerScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
+                .padding(padding)
+                .background(Color.Black),
         ) {
-            if (hasPermission) {
-                CameraPreviewView(onBarcode = onScanned)
-                ScannerOverlay()
-            } else {
+            if (!hasPermission) {
                 PermissionPrompt(
+                    askedOnce = askedOnce,
                     onRequest = { permissionLauncher.launch(Manifest.permission.CAMERA) },
+                    onOpenSettings = {
+                        context.startActivity(
+                            Intent(
+                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                Uri.fromParts("package", context.packageName, null),
+                            ),
+                        )
+                    },
                 )
+                return@Box
+            }
+
+            CameraPreviewView(
+                onCameraReady = { camera = it },
+                onRawCode = { raw ->
+                    if (detected) return@CameraPreviewView
+                    val parsed = EarTag.parseBarcode(raw)
+                    if (parsed != null && EarTag.hasValidCheckDigit(parsed)) {
+                        detected = true
+                        onScanned(parsed)
+                    } else {
+                        // Rozróżniamy: „to nie jest kolczyk” od „kolczyk, ale
+                        // odczyt się nie zgadza” — to różne problemy dla hodowcy.
+                        rejected = if (parsed == null) {
+                            "Odczytano kod, ale to nie jest numer kolczyka."
+                        } else {
+                            "Numer $parsed ma błędną cyfrę kontrolną. Przytrzymaj telefon stabilniej."
+                        }
+                    }
+                },
+            )
+            ViewfinderOverlay(message = rejected)
+        }
+    }
+}
+
+/**
+ * Przyciemnione otoczenie z jasnym okienkiem celowniczym.
+ *
+ * Sam prostokąt narysowany na podglądzie ginął na tle obory; przyciemnienie
+ * reszty kadru prowadzi wzrok tam, gdzie ma trafić kod.
+ */
+@Composable
+private fun ViewfinderOverlay(message: String?) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .background(SCRIM),
+            contentAlignment = Alignment.BottomCenter,
+        ) {
+            Text(
+                text = "Wyceluj w kod kreskowy na kolczyku",
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(24.dp),
+            )
+        }
+
+        Row(modifier = Modifier.height(170.dp)) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .background(SCRIM),
+            )
+            Box(
+                modifier = Modifier
+                    .width(300.dp)
+                    .fillMaxHeight()
+                    .border(2.dp, Color.White, RoundedCornerShape(12.dp)),
+            )
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .background(SCRIM),
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .background(SCRIM),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (message != null) {
+                    Text(
+                        text = message,
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                    )
+                } else {
+                    Text(
+                        text = "Akceptowane są tylko numery z poprawną cyfrą kontrolną.",
+                        color = Color.White.copy(alpha = 0.75f),
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun BoxScope.ScannerOverlay() {
-    Box(
-        modifier = Modifier
-            .align(Alignment.Center)
-            .size(width = 280.dp, height = 160.dp)
-            .border(width = 2.dp, color = Color.White),
-    )
-    Text(
-        text = "Wyceluj w kod kreskowy kolczyka",
-        color = Color.White,
-        style = MaterialTheme.typography.bodyLarge,
-        textAlign = TextAlign.Center,
-        modifier = Modifier
-            .align(Alignment.BottomCenter)
-            .fillMaxWidth()
-            .background(Color.Black.copy(alpha = 0.5f))
-            .padding(16.dp),
-    )
-}
-
-@Composable
-private fun PermissionPrompt(onRequest: () -> Unit) {
+private fun PermissionPrompt(
+    askedOnce: Boolean,
+    onRequest: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -136,20 +291,36 @@ private fun PermissionPrompt(onRequest: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            text = "Skaner kolczyków wymaga dostępu do kamery.",
-            style = MaterialTheme.typography.bodyLarge,
+            text = "Skaner potrzebuje dostępu do aparatu",
+            style = MaterialTheme.typography.titleMedium,
+            color = Color.White,
             textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "Zdjęcia nie są zapisywane ani wysyłane — obraz służy wyłącznie " +
+                "do odczytania numeru z kolczyka.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.White.copy(alpha = 0.75f),
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(24.dp))
         Button(onClick = onRequest) { Text("Udziel dostępu") }
+
+        // Po odmowie systemowe okno może się już nie pokazać — wtedy jedyną drogą
+        // są ustawienia aplikacji.
+        if (askedOnce) {
+            TextButton(onClick = onOpenSettings) { Text("Otwórz ustawienia aplikacji") }
+        }
     }
 }
 
 @Composable
-private fun CameraPreviewView(onBarcode: (String) -> Unit) {
-    val context = LocalContext.current
+private fun CameraPreviewView(
+    onCameraReady: (Camera) -> Unit,
+    onRawCode: (String) -> Unit,
+) {
     val lifecycleOwner = LocalLifecycleOwner.current
-    var detected by remember { mutableStateOf(false) }
 
     AndroidView(
         modifier = Modifier.fillMaxSize(),
@@ -187,16 +358,7 @@ private fun CameraPreviewView(onBarcode: (String) -> Unit) {
                     .build()
                     .apply {
                         setAnalyzer(ContextCompat.getMainExecutor(ctx)) { imageProxy ->
-                            processFrame(scanner, imageProxy) { raw ->
-                                if (!detected) {
-                                    val parsed = EarTag.parseBarcode(raw)
-                                    // Zła cyfra kontrolna = najpewniej błędny odczyt klatki — skanujemy dalej.
-                                    if (parsed != null && EarTag.hasValidCheckDigit(parsed)) {
-                                        detected = true
-                                        onBarcode(parsed)
-                                    }
-                                }
-                            }
+                            processFrame(scanner, imageProxy, onRawCode)
                         }
                     }
 
@@ -208,7 +370,7 @@ private fun CameraPreviewView(onBarcode: (String) -> Unit) {
                         preview,
                         analysis,
                     )
-                }
+                }.onSuccess { onCameraReady(it) }
             }, ContextCompat.getMainExecutor(ctx))
 
             previewView
@@ -216,7 +378,7 @@ private fun CameraPreviewView(onBarcode: (String) -> Unit) {
     )
 }
 
-@androidx.annotation.OptIn(ExperimentalGetImage::class)
+@AndroidOptIn(ExperimentalGetImage::class)
 private fun processFrame(
     scanner: BarcodeScanner,
     imageProxy: ImageProxy,

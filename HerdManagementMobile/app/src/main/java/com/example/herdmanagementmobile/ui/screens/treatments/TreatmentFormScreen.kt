@@ -7,13 +7,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -21,9 +18,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -37,13 +34,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import java.time.Instant
+import com.example.herdmanagementmobile.domain.model.DeadlineText
+import com.example.herdmanagementmobile.ui.common.DateField
+import com.example.herdmanagementmobile.ui.common.SectionCard
+import com.example.herdmanagementmobile.ui.common.PastOrToday
+import com.example.herdmanagementmobile.ui.common.toLocalDate
 import java.time.LocalDate
 import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
 
 private enum class DatePickerTarget { TREATMENT, WITHDRAWAL }
 
+/**
+ * Formularz wpisu o leczeniu.
+ *
+ * Kluczowe pole to karencja: przez ten czas mleko i mięso zwierzęcia nie mogą
+ * trafić do obrotu. Dlatego po wybraniu daty ekran mówi wprost, ile dni potrwa,
+ * zamiast zostawiać użytkownikowi liczenie w pamięci.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TreatmentFormScreen(
@@ -65,81 +72,110 @@ fun TreatmentFormScreen(
                 },
             )
         },
+        bottomBar = {
+            Surface(tonalElevation = 3.dp) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    state.saveError?.let { err ->
+                        Text(
+                            text = err,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    Button(
+                        onClick = { viewModel.save(onSaved) },
+                        enabled = !state.isSaving && state.drug.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Zapisz leczenie")
+                    }
+                }
+            }
+        },
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            OutlinedTextField(
-                value = state.drug,
-                onValueChange = viewModel::onDrugChange,
-                label = { Text("Lek *") },
-                placeholder = { Text("np. Amoksycylina") },
-                isError = state.drugError != null,
-                supportingText = { state.drugError?.let { Text(it) } },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            OutlinedTextField(
-                value = state.dose,
-                onValueChange = viewModel::onDoseChange,
-                label = { Text("Dawka") },
-                placeholder = { Text("np. 5 ml IM") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            OutlinedTextField(
-                value = state.vet,
-                onValueChange = viewModel::onVetChange,
-                label = { Text("Lekarz weterynarii") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            DateField(
-                label = "Data leczenia",
-                value = state.treatmentDate.format(DateTimeFormatter.ISO_LOCAL_DATE),
-                onClick = { activePicker = DatePickerTarget.TREATMENT },
-            )
-
-            DateField(
-                label = "Karencja do",
-                value = state.withdrawalUntil
-                    ?.format(DateTimeFormatter.ISO_LOCAL_DATE)
-                    ?: "Nie ustawiono",
-                onClick = { activePicker = DatePickerTarget.WITHDRAWAL },
-                onClear = state.withdrawalUntil?.let {
-                    { viewModel.onWithdrawalChange(null) }
-                },
-            )
-
-            OutlinedTextField(
-                value = state.notes,
-                onValueChange = viewModel::onNotesChange,
-                label = { Text("Notatki") },
-                minLines = 3,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            state.saveError?.let { err ->
-                Text(err, color = MaterialTheme.colorScheme.error)
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            Button(
-                onClick = { viewModel.save(onSaved) },
-                enabled = !state.isSaving && state.drug.isNotBlank(),
-                modifier = Modifier.fillMaxWidth(),
+            SectionCard(
+                title = "Zabieg",
+                hint = "Wpis trafia do dokumentacji leczenia gospodarstwa.",
             ) {
-                Text("Zapisz leczenie")
+                OutlinedTextField(
+                    value = state.drug,
+                    onValueChange = viewModel::onDrugChange,
+                    label = { Text("Lek *") },
+                    placeholder = { Text("np. Amoksycylina") },
+                    isError = state.drugError != null,
+                    supportingText = { state.drugError?.let { Text(it) } },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                OutlinedTextField(
+                    value = state.dose,
+                    onValueChange = viewModel::onDoseChange,
+                    label = { Text("Dawka") },
+                    placeholder = { Text("np. 5 ml domięśniowo") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                OutlinedTextField(
+                    value = state.vet,
+                    onValueChange = viewModel::onVetChange,
+                    label = { Text("Lekarz weterynarii") },
+                    placeholder = { Text("np. lek. wet. A. Nowak") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
+
+            SectionCard(
+                title = "Karencja",
+                hint = "Okres, w którym mleko i mięso zwierzęcia nie mogą trafić do obrotu. " +
+                    "Długość podaje ulotka leku albo lekarz weterynarii.",
+            ) {
+                DateField(
+                    label = "Data zabiegu *",
+                    date = state.treatmentDate,
+                    onPick = { activePicker = DatePickerTarget.TREATMENT },
+                    isError = state.dateError != null,
+                    supportingText = state.dateError,
+                )
+
+                DateField(
+                    label = "Karencja do",
+                    date = state.withdrawalUntil,
+                    onPick = { activePicker = DatePickerTarget.WITHDRAWAL },
+                    placeholder = "Nie ustawiono",
+                    isError = state.withdrawalError != null,
+                    supportingText = state.withdrawalError ?: withdrawalSummary(state),
+                    onClear = { viewModel.onWithdrawalChange(null) },
+                )
+            }
+
+            SectionCard(title = "Notatki") {
+                OutlinedTextField(
+                    value = state.notes,
+                    onValueChange = viewModel::onNotesChange,
+                    label = { Text("Notatki (opcjonalnie)") },
+                    placeholder = { Text("np. rozpoznanie, ćwiartka, zalecenia") },
+                    minLines = 3,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
+            Text(
+                text = "* pola wymagane",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 
@@ -153,14 +189,20 @@ fun TreatmentFormScreen(
                 .atStartOfDay(ZoneOffset.UTC)
                 .toInstant()
                 .toEpochMilli(),
+            // Zabieg to zapis przeszłości, ale karencja z definicji sięga w przyszłość —
+            // ograniczenie dat obowiązuje więc tylko dla daty zabiegu.
+            selectableDates = if (target == DatePickerTarget.TREATMENT) {
+                PastOrToday
+            } else {
+                NotBeforeTreatment(state.treatmentDate)
+            },
         )
         DatePickerDialog(
             onDismissRequest = { activePicker = null },
             confirmButton = {
                 TextButton(onClick = {
                     pickerState.selectedDateMillis?.let { millis ->
-                        val date: LocalDate = Instant.ofEpochMilli(millis)
-                            .atZone(ZoneOffset.UTC).toLocalDate()
+                        val date = millis.toLocalDate()
                         when (target) {
                             DatePickerTarget.TREATMENT -> viewModel.onDateChange(date)
                             DatePickerTarget.WITHDRAWAL -> viewModel.onWithdrawalChange(date)
@@ -178,24 +220,23 @@ fun TreatmentFormScreen(
     }
 }
 
-@Composable
-private fun DateField(
-    label: String,
-    value: String,
-    onClick: () -> Unit,
-    onClear: (() -> Unit)? = null,
-) {
-    OutlinedButton(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Icon(Icons.Default.DateRange, contentDescription = null)
-        Spacer(Modifier.width(8.dp))
-        Text(text = "$label: $value", modifier = Modifier.weight(1f))
-        if (onClear != null) {
-            IconButton(onClick = onClear) {
-                Icon(Icons.Default.Clear, contentDescription = "Wyczyść datę")
-            }
-        }
-    }
+/** Podsumowanie karencji: ile potrwa i czy jeszcze trwa. */
+private fun withdrawalSummary(state: TreatmentFormState): String {
+    val days = state.withdrawalDays ?: return "Zostaw puste, jeśli lek nie wymaga karencji."
+    val length = "Karencja potrwa $days ${DeadlineText.days(days)} od dnia zabiegu"
+    val remaining = state.withdrawalUntil?.let { until ->
+        if (until.isBefore(LocalDate.now())) " — już zakończona." else "."
+    } ?: "."
+    return length + remaining
+}
+
+/** Karencja nie może kończyć się przed dniem zabiegu. */
+@OptIn(ExperimentalMaterial3Api::class)
+private class NotBeforeTreatment(
+    private val treatmentDate: LocalDate,
+) : androidx.compose.material3.SelectableDates {
+    override fun isSelectableDate(utcTimeMillis: Long): Boolean =
+        !utcTimeMillis.toLocalDate().isBefore(treatmentDate)
+
+    override fun isSelectableYear(year: Int): Boolean = year >= treatmentDate.year
 }

@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 import javax.inject.Inject
 
 data class TreatmentFormState(
@@ -24,8 +25,14 @@ data class TreatmentFormState(
     val notes: String = "",
     val isSaving: Boolean = false,
     val drugError: String? = null,
+    val dateError: String? = null,
+    val withdrawalError: String? = null,
     val saveError: String? = null,
-)
+) {
+    /** Ile dni potrwa karencja liczac od dnia zabiegu. */
+    val withdrawalDays: Long?
+        get() = withdrawalUntil?.let { ChronoUnit.DAYS.between(treatmentDate, it) }
+}
 
 @HiltViewModel
 class TreatmentFormViewModel @Inject constructor(
@@ -41,8 +48,10 @@ class TreatmentFormViewModel @Inject constructor(
     fun onDrugChange(value: String) = _state.update { it.copy(drug = value, drugError = null) }
     fun onDoseChange(value: String) = _state.update { it.copy(dose = value) }
     fun onVetChange(value: String) = _state.update { it.copy(vet = value) }
-    fun onDateChange(value: LocalDate) = _state.update { it.copy(treatmentDate = value) }
-    fun onWithdrawalChange(value: LocalDate?) = _state.update { it.copy(withdrawalUntil = value) }
+    fun onDateChange(value: LocalDate) =
+        _state.update { it.copy(treatmentDate = value, dateError = null, withdrawalError = null) }
+    fun onWithdrawalChange(value: LocalDate?) =
+        _state.update { it.copy(withdrawalUntil = value, withdrawalError = null) }
     fun onNotesChange(value: String) = _state.update { it.copy(notes = value) }
 
     fun save(onSuccess: () -> Unit) {
@@ -50,6 +59,18 @@ class TreatmentFormViewModel @Inject constructor(
         val s = _state.value
         if (s.drug.isBlank()) {
             _state.update { it.copy(drugError = "Podaj nazwę leku") }
+            return
+        }
+        if (s.treatmentDate.isAfter(LocalDate.now())) {
+            _state.update { it.copy(dateError = "Data zabiegu nie może być z przyszłości.") }
+            return
+        }
+        // Karencja biegnie OD zabiegu, więc data wcześniejsza nie ma sensu —
+        // a przepuszczona dawałaby „karencję zakończoną” już w chwili zapisu.
+        if (s.withdrawalUntil != null && s.withdrawalUntil.isBefore(s.treatmentDate)) {
+            _state.update {
+                it.copy(withdrawalError = "Karencja nie może kończyć się przed dniem zabiegu.")
+            }
             return
         }
         viewModelScope.launch {
