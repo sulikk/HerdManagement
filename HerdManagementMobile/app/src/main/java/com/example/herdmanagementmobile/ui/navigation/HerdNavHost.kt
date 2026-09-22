@@ -42,20 +42,8 @@ fun HerdNavHost(
                 onAddClick = {
                     navController.navigate(Route.AnimalForm.build())
                 },
-                onComplianceClick = {
-                    navController.navigate(Route.Compliance.path)
-                },
                 onSettingsClick = {
                     navController.navigate(Route.Settings.path)
-                },
-                onStatisticsClick = {
-                    navController.navigate(Route.Statistics.path)
-                },
-                onAssistantClick = {
-                    navController.navigate(Route.Assistant.path)
-                },
-                onListingsClick = {
-                    navController.navigate(Route.Listings.path)
                 },
             )
         }
@@ -158,7 +146,6 @@ fun HerdNavHost(
         }
         composable(Route.Compliance.path) {
             ComplianceScreen(
-                onBack = { navController.popBackStack() },
                 onItemClick = { animalId ->
                     navController.navigate(Route.AnimalDetail.build(animalId))
                 },
@@ -168,14 +155,13 @@ fun HerdNavHost(
             SettingsScreen(onBack = { navController.popBackStack() })
         }
         composable(Route.Statistics.path) {
-            StatisticsScreen(onBack = { navController.popBackStack() })
+            StatisticsScreen()
         }
         composable(Route.Assistant.path) {
-            AssistantScreen(onBack = { navController.popBackStack() })
+            AssistantScreen()
         }
         composable(Route.Listings.path) {
             ListingListScreen(
-                onBack = { navController.popBackStack() },
                 onListingClick = { listingId ->
                     navController.navigate(Route.ListingDetail.build(listingId))
                 },

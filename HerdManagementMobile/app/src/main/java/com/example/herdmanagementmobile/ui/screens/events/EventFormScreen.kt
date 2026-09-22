@@ -9,12 +9,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -23,9 +22,9 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -37,13 +36,25 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.herdmanagementmobile.domain.model.DeadlineText
 import com.example.herdmanagementmobile.domain.model.EventType
-import java.time.Instant
+import com.example.herdmanagementmobile.ui.common.DateField
+import com.example.herdmanagementmobile.ui.common.SectionCard
+import com.example.herdmanagementmobile.ui.common.PastOrToday
+import com.example.herdmanagementmobile.ui.common.dayFormat
+import com.example.herdmanagementmobile.ui.common.toLocalDate
 import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
 
+/**
+ * Formularz zdarzenia zwierzęcego.
+ *
+ * Najważniejsze, czego ekran ma nauczyć: od daty zdarzenia biegnie ustawowy termin
+ * 7 dni na zgłoszenie do IRZplus. Dlatego termin jest wyliczany i pokazywany od razu
+ * po wyborze daty, zanim użytkownik zdecyduje, czy zgłasza teraz, czy później.
+ */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun EventFormScreen(
@@ -66,84 +77,125 @@ fun EventFormScreen(
                 },
             )
         },
+        bottomBar = {
+            Surface(tonalElevation = 3.dp) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    state.saveError?.let { err ->
+                        Text(
+                            text = err,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    Button(
+                        onClick = { if (viewModel.validate()) showSubmitDialog = true },
+                        enabled = !state.isSaving,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Zapisz zdarzenie")
+                    }
+                }
+            }
+        },
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("Typ zdarzenia", style = MaterialTheme.typography.labelLarge)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                EventType.entries.forEach { type ->
-                    FilterChip(
-                        selected = state.type == type,
-                        onClick = { viewModel.onTypeChange(type) },
-                        label = { Text(type.label()) },
+            SectionCard(
+                title = "Rodzaj zdarzenia",
+                hint = "Każde z tych zdarzeń podlega obowiązkowi zgłoszenia do IRZplus.",
+            ) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    EventType.entries.forEach { type ->
+                        FilterChip(
+                            selected = state.type == type,
+                            onClick = { viewModel.onTypeChange(type) },
+                            label = { Text(type.label()) },
+                        )
+                    }
+                }
+                Text(
+                    text = state.type.hint(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            SectionCard(title = "Termin") {
+                DateField(
+                    label = "Data zdarzenia *",
+                    date = state.eventDate,
+                    onPick = { showDatePicker = true },
+                    isError = state.dateError != null,
+                    supportingText = state.dateError,
+                )
+                DeadlineHint(
+                    deadline = state.deadline.format(dayFormat),
+                    daysLeft = state.daysToDeadline,
+                )
+            }
+
+            if (state.requiresPartner) {
+                val arrival = state.type == EventType.ARRIVAL
+                SectionCard(
+                    title = "Siedziba partnera",
+                    hint = if (arrival) {
+                        "Skąd zwierzę przyjechało. Rejestr wymaga tego numeru przy przybyciu."
+                    } else {
+                        "Dokąd zwierzę trafiło. Rejestr wymaga tego numeru przy ubyciu."
+                    },
+                ) {
+                    OutlinedTextField(
+                        value = state.partnerHolding,
+                        onValueChange = viewModel::onPartnerHoldingChange,
+                        label = {
+                            Text(if (arrival) "Siedziba, z której przybyło *" else "Siedziba, do której ubyło *")
+                        },
+                        placeholder = { Text("PL000111222") },
+                        supportingText = { Text(state.partnerError ?: "PL + 9 cyfr") },
+                        isError = state.partnerError != null,
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Characters,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
 
-            OutlinedButton(
-                onClick = { showDatePicker = true },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(Icons.Default.DateRange, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text(text = state.eventDate.format(DateTimeFormatter.ISO_LOCAL_DATE))
-            }
-
-            if (state.requiresPartner) {
-                val label = if (state.type == EventType.ARRIVAL) {
-                    "Siedziba, z której przybyło *"
-                } else {
-                    "Siedziba, do której ubyło *"
-                }
+            SectionCard(title = "Notatki") {
                 OutlinedTextField(
-                    value = state.partnerHolding,
-                    onValueChange = viewModel::onPartnerHoldingChange,
-                    label = { Text(label) },
-                    placeholder = { Text("PL000111222") },
-                    supportingText = { Text(state.partnerError ?: "Format: PL + 9 cyfr") },
-                    isError = state.partnerError != null,
-                    singleLine = true,
+                    value = state.notes,
+                    onValueChange = viewModel::onNotesChange,
+                    label = { Text("Notatki (opcjonalnie)") },
+                    supportingText = { Text("Zostają w ewidencji; nie są wysyłane do IRZplus.") },
+                    minLines = 3,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
 
-            OutlinedTextField(
-                value = state.notes,
-                onValueChange = viewModel::onNotesChange,
-                label = { Text("Notatki (opcjonalnie)") },
-                minLines = 3,
-                modifier = Modifier.fillMaxWidth(),
+            Text(
+                text = "* pola wymagane",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-
-            state.saveError?.let { err ->
-                Text(err, color = MaterialTheme.colorScheme.error)
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            Button(
-                onClick = { if (viewModel.validate()) showSubmitDialog = true },
-                enabled = !state.isSaving,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Zapisz zdarzenie")
-            }
         }
     }
 
     if (showSubmitDialog) {
         IrzSubmitDialog(
             title = "Zgłosić do IRZplus?",
-            description = "${state.type.label()} z dnia " +
-                "${state.eventDate.format(DateTimeFormatter.ISO_LOCAL_DATE)} zostanie zapisane " +
-                "i zgłoszone do systemu ARiMR (IRZplus). Zgłoszenia nie można cofnąć z poziomu aplikacji.\n\n" +
-                "Możesz też tylko zapisać zdarzenie i zgłosić je później z karty zwierzęcia.",
+            description = "${state.type.label()} z dnia ${state.eventDate.format(dayFormat)} " +
+                "zostanie zapisane i zgłoszone do systemu ARiMR (IRZplus). " +
+                "Zgłoszenia nie można cofnąć z poziomu aplikacji.\n\n" +
+                "Możesz też tylko zapisać zdarzenie i zgłosić je później z karty zwierzęcia — " +
+                "termin upływa ${state.deadline.format(dayFormat)}.",
             confirmLabel = "Zapisz i zgłoś",
             onConfirm = {
                 showSubmitDialog = false
@@ -164,16 +216,13 @@ fun EventFormScreen(
                 .atStartOfDay(ZoneOffset.UTC)
                 .toInstant()
                 .toEpochMilli(),
+            selectableDates = PastOrToday,
         )
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
             confirmButton = {
                 TextButton(onClick = {
-                    pickerState.selectedDateMillis?.let { millis ->
-                        val date = Instant.ofEpochMilli(millis)
-                            .atZone(ZoneOffset.UTC).toLocalDate()
-                        viewModel.onDateChange(date)
-                    }
+                    pickerState.selectedDateMillis?.let { viewModel.onDateChange(it.toLocalDate()) }
                     showDatePicker = false
                 }) { Text("OK") }
             },
@@ -186,9 +235,38 @@ fun EventFormScreen(
     }
 }
 
+/**
+ * Termin zgłoszenia wyliczony z daty zdarzenia.
+ *
+ * Kolor i treść zmieniają się wraz z pilnością — przy zdarzeniu sprzed tygodnia
+ * użytkownik ma od razu wiedzieć, że jest po czasie, a nie dowiadywać się o tym
+ * dopiero na ekranie terminów.
+ */
+@Composable
+private fun DeadlineHint(deadline: String, daysLeft: Long) {
+    val overdue = daysLeft < 0
+    Text(
+        text = "Termin zgłoszenia do IRZplus: $deadline — ${DeadlineText.timeLeft(daysLeft)}.",
+        style = MaterialTheme.typography.bodySmall,
+        color = if (overdue) {
+            MaterialTheme.colorScheme.error
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
+    )
+}
+
 private fun EventType.label(): String = when (this) {
     EventType.BIRTH -> "Urodzenie"
     EventType.ARRIVAL -> "Przybycie"
     EventType.DEPARTURE -> "Ubycie"
     EventType.DEATH -> "Padnięcie"
+}
+
+/** Krótkie wyjaśnienie, czego dotyczy dany typ — nazwy bywają mylone. */
+private fun EventType.hint(): String = when (this) {
+    EventType.BIRTH -> "Urodzenie cielęcia w Twoim gospodarstwie."
+    EventType.ARRIVAL -> "Zwierzę przyjechało do Ciebie z innej siedziby stada."
+    EventType.DEPARTURE -> "Zwierzę opuściło gospodarstwo — sprzedaż, przekazanie, ubój."
+    EventType.DEATH -> "Zwierzę padło w gospodarstwie."
 }

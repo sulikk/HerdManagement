@@ -40,7 +40,7 @@ fun EventDto.toDomain(): AnimalEvent = AnimalEvent(
     notes = notes,
     partnerHoldingNumber = partnerHoldingNumber,
     irzStatus = IrzStatus.valueOf(irzStatus.uppercase()),
-    irzSubmittedAt = irzSubmittedAt?.let { LocalDateTime.parse(it) },
+    irzSubmittedAt = irzSubmittedAt.utcToLocal(),
     irzMessage = irzMessage,
     irzDocumentNumber = irzDocumentNumber,
 )
@@ -53,14 +53,14 @@ fun AnimalEvent.toDto(): EventDto = EventDto(
     notes = notes,
     partnerHoldingNumber = partnerHoldingNumber,
     irzStatus = irzStatus.name.lowercase(),
-    irzSubmittedAt = irzSubmittedAt?.toString(),
+    irzSubmittedAt = irzSubmittedAt?.localToUtc(),
     irzMessage = irzMessage,
     irzDocumentNumber = irzDocumentNumber,
 )
 
 fun AnimalEvent.toIrzResultDto(): IrzResultDto = IrzResultDto(
     irzStatus = irzStatus.name.lowercase(),
-    irzSubmittedAt = irzSubmittedAt?.toString(),
+    irzSubmittedAt = irzSubmittedAt?.localToUtc(),
     irzMessage = irzMessage,
     irzDocumentNumber = irzDocumentNumber,
 )

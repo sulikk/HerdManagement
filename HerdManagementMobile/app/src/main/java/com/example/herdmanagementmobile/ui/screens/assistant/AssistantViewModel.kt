@@ -16,10 +16,17 @@ import javax.inject.Inject
 
 enum class ChatAuthor { USER, ASSISTANT, SYSTEM }
 
+/**
+ * Wydźwięk wpisu systemowego — decyduje o ikonie i kolorze.
+ * Wpis o zapisie w ewidencji musi wyglądać inaczej niż odmowa czy błąd.
+ */
+enum class MessageTone { NEUTRAL, SUCCESS, REJECTED, ERROR }
+
 data class ChatEntry(
     val id: Long,
     val author: ChatAuthor,
     val text: String,
+    val tone: MessageTone = MessageTone.NEUTRAL,
 )
 
 data class AssistantState(
@@ -28,12 +35,25 @@ data class AssistantState(
     val busy: Boolean = false,
     val pending: AssistantAction? = null,
     val error: String? = null,
-)
+) {
+    /** Rozmowa jeszcze się nie zaczęła — jest miejsce na podpowiedzi. */
+    val fresh: Boolean get() = entries.none { it.author == ChatAuthor.USER }
+
+    /** Dopóki propozycja czeka na decyzję, backend nie przyjmie kolejnej wiadomości. */
+    val inputBlocked: Boolean get() = busy || pending != null
+}
 
 private const val GREETING =
-    "Cześć! Zapytaj o stado — np. „ile mam cieląt”, „co muszę zgłosić do IRZplus”, " +
-        "„które sztuki są na karencji”. Mogę też przygotować wpis do ewidencji; " +
-        "zapiszę go dopiero, gdy go zatwierdzisz."
+    "Zapytaj o stado albo poproś o przygotowanie wpisu do ewidencji. " +
+        "Każdy zapis pokażę Ci do zatwierdzenia — bez Twojej zgody nic nie trafi do bazy."
+
+/** Gotowe pytania na start — hodowca nie musi zgadywać, co asystent potrafi. */
+val SUGGESTED_PROMPTS = listOf(
+    "Co muszę zgłosić do IRZplus?",
+    "Które sztuki są na karencji?",
+    "Ile mam cieląt?",
+    "Pokaż statystyki stada",
+)
 
 @HiltViewModel
 class AssistantViewModel @Inject constructor(
@@ -56,9 +76,10 @@ class AssistantViewModel @Inject constructor(
             repository.isConfigured().onSuccess { configured ->
                 if (!configured) {
                     append(
-                        ChatAuthor.SYSTEM,
-                        "Backend nie ma skonfigurowanego klucza do modelu językowego — " +
+                        author = ChatAuthor.SYSTEM,
+                        text = "Backend nie ma skonfigurowanego klucza do modelu językowego — " +
                             "asystent nie odpowie, dopóki nie ustawisz LLM_API_KEY na serwerze.",
+                        tone = MessageTone.ERROR,
                     )
                 }
             }
@@ -69,9 +90,12 @@ class AssistantViewModel @Inject constructor(
 
     fun dismissError() = _state.update { it.copy(error = null) }
 
-    fun send() {
-        val text = _state.value.input.trim()
-        if (text.isEmpty() || _state.value.busy || _state.value.pending != null) return
+    fun send() = ask(_state.value.input)
+
+    /** Wysyła treść wprost — używane też przez podpowiedzi startowe. */
+    fun ask(message: String) {
+        val text = message.trim()
+        if (text.isEmpty() || _state.value.inputBlocked) return
         append(ChatAuthor.USER, text)
         _state.update { it.copy(input = "", busy = true, error = null) }
         viewModelScope.launch {
@@ -104,12 +128,21 @@ class AssistantViewModel @Inject constructor(
     private fun apply(turn: AssistantTurn) {
         conversationId = turn.conversationId
         turn.executedActions.forEach { action ->
-            val prefix = when {
-                !action.approved -> "Odrzucono: "
-                action.ok -> "Wykonano: "
+            val tone = when {
+                !action.approved -> MessageTone.REJECTED
+                action.ok -> MessageTone.SUCCESS
+                else -> MessageTone.ERROR
+            }
+            val prefix = when (tone) {
+                MessageTone.REJECTED -> "Odrzucono: "
+                MessageTone.SUCCESS -> "Zapisano: "
                 else -> "Nie udało się: "
             }
-            append(ChatAuthor.SYSTEM, prefix + action.description.trimEnd('?') + suffix(action.summary, action.ok))
+            append(
+                author = ChatAuthor.SYSTEM,
+                text = prefix + action.description.trimEnd('?') + suffix(action.summary, action.ok),
+                tone = tone,
+            )
         }
         // Narzędzia asystenta zapisują w bazie backendu, nie w Room. Bez tego
         // zatwierdzony przed chwilą wpis nie pojawiłby się na karcie zwierzęcia.
@@ -131,8 +164,12 @@ class AssistantViewModel @Inject constructor(
     private fun message(error: Throwable?): String =
         error?.message ?: "Nie udało się połączyć z asystentem."
 
-    private fun append(author: ChatAuthor, text: String) {
-        val entry = ChatEntry(nextId++, author, text)
+    private fun append(
+        author: ChatAuthor,
+        text: String,
+        tone: MessageTone = MessageTone.NEUTRAL,
+    ) {
+        val entry = ChatEntry(nextId++, author, text, tone)
         _state.update { it.copy(entries = it.entries + entry) }
     }
 }

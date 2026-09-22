@@ -9,7 +9,10 @@ import com.example.herdmanagementmobile.data.repository.ListingRepository
 import com.example.herdmanagementmobile.data.repository.TreatmentRepository
 import com.example.herdmanagementmobile.domain.model.Animal
 import com.example.herdmanagementmobile.domain.model.AnimalEvent
+import com.example.herdmanagementmobile.domain.model.ListingStatus
 import com.example.herdmanagementmobile.domain.model.Treatment
+import com.example.herdmanagementmobile.domain.stats.AgeGroup
+import com.example.herdmanagementmobile.domain.stats.HerdStatistics
 import com.example.herdmanagementmobile.ui.navigation.Route
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -17,6 +20,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 import javax.inject.Inject
 
 data class AnimalDetailState(
@@ -24,8 +29,19 @@ data class AnimalDetailState(
     val animal: Animal? = null,
     val events: List<AnimalEvent> = emptyList(),
     val treatments: List<Treatment> = emptyList(),
-    /** Ogloszenie zajmujace te sztuke - szkic albo opublikowane (zadanie 9). */
+    /** Ogłoszenie zajmujące tę sztukę — szkic albo opublikowane (zadanie 9). */
     val activeListingId: Long? = null,
+    /**
+     * Czy sztuka nadal jest w stadzie.
+     *
+     * Po ubyciu albo padnięciu karta zostaje w ewidencji (historia musi się
+     * zachować), ale bez tej informacji wyglądała identycznie jak karta
+     * zwierzęcia stojącego w oborze.
+     */
+    val inHerd: Boolean = true,
+    /** Grupa użytkowa i wiek — to samo nazewnictwo co w statystykach. */
+    val ageGroup: AgeGroup? = null,
+    val ageMonths: Long? = null,
 )
 
 @HiltViewModel
@@ -43,12 +59,24 @@ class AnimalDetailViewModel @Inject constructor(
         animalRepository.observeById(animalId),
         eventRepository.observeForAnimal(animalId),
         treatmentRepository.observeForAnimal(animalId),
-    ) { animal, events, treatments ->
+        listingRepository.observeAll(),
+    ) { animal, events, treatments, listings ->
+        val today = LocalDate.now()
         AnimalDetailState(
             isLoading = false,
             animal = animal,
             events = events,
             treatments = treatments,
+            // Ogłoszenie „zajmujące” sztukę — szkic albo opublikowane.
+            activeListingId = listings
+                .firstOrNull {
+                    it.animalId == animalId &&
+                        (it.status == ListingStatus.DRAFT || it.status == ListingStatus.PUBLISHED)
+                }
+                ?.listingId,
+            inHerd = HerdStatistics.isInHerd(events),
+            ageGroup = animal?.let { HerdStatistics.ageGroup(it, today) },
+            ageMonths = animal?.birthDate?.let { ChronoUnit.MONTHS.between(it, today) },
         )
     }.stateIn(
         scope = viewModelScope,
@@ -60,13 +88,6 @@ class AnimalDetailViewModel @Inject constructor(
     fun submitToIrz(eventId: Long) {
         viewModelScope.launch { eventRepository.submitToIrz(eventId) }
     }
-
-    /**
-     * Sprawdza, czy zwierze ma juz aktywne ogloszenie. Decyduje, czy przycisk
-     * prowadzi do formularza, czy do istniejacej karty ogloszenia.
-     */
-    suspend fun activeListingId(): Long? =
-        if (animalId <= 0) null else listingRepository.activeListingFor(animalId)?.id
 
     fun delete(onDone: () -> Unit) {
         if (animalId <= 0) return

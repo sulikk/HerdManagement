@@ -1,108 +1,331 @@
 package com.example.herdmanagementmobile.ui.screens.compliance
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material3.Badge
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.herdmanagementmobile.domain.model.ComplianceItem
+import com.example.herdmanagementmobile.domain.model.DeadlineText
 import com.example.herdmanagementmobile.domain.model.EventType
 import com.example.herdmanagementmobile.domain.model.IrzStatus
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
-@OptIn(ExperimentalMaterial3Api::class)
+private val dayFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+
+/**
+ * Terminy zgłoszeń do IRZplus.
+ *
+ * Ekran odpowiada na jedno pytanie: co mnie goni. Dlatego zaczyna się od
+ * podsumowania liczbowego (ile zaległych, ile pilnych), a dopiero pod nim leży
+ * lista pogrupowana wg pilności, z przyklejonymi nagłówkami — przy kilkudziesięciu
+ * zdarzeniach trzeba wiedzieć, w której grupie się jest.
+ *
+ * Pilność niesie trzy nośniki naraz: kolor, ikonę i tekst. Sam kolor wykluczałby
+ * osoby z zaburzeniami widzenia barw, a to informacja o terminie ustawowym.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ComplianceScreen(
-    onBack: () -> Unit,
+    onBack: (() -> Unit)? = null,
     onItemClick: (Long) -> Unit,
     viewModel: ComplianceViewModel = hiltViewModel(),
 ) {
-    val items by viewModel.items.collectAsState()
+    val state by viewModel.state.collectAsState()
     val today = LocalDate.now()
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Zgodność z IRZ") },
+                title = { Text("Terminy zgłoszeń") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Wróć")
+                    if (onBack != null) {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Wróć")
+                        }
                     }
                 },
             )
         },
     ) { padding ->
-        if (items.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(24.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = "Wszystkie zdarzenia zgłoszone i potwierdzone.\nBrak terminów do pilnowania.",
-                    style = MaterialTheme.typography.bodyLarge,
+        if (state.waiting.isEmpty() && state.rejected.isEmpty()) {
+            AllClear(Modifier.padding(padding))
+            return@Scaffold
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+        ) {
+            TabRow(selectedTabIndex = selectedTab) {
+                Tab(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    text = { TabLabel("Do zgłoszenia", state.waiting.size, highlight = false) },
+                )
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    text = { TabLabel("Do poprawy", state.rejected.size, highlight = true) },
                 )
             }
-        } else {
-            val overdue = items.filter { it.urgency(today) == ComplianceItem.Urgency.OVERDUE }
-            val urgent = items.filter { it.urgency(today) == ComplianceItem.Urgency.URGENT }
-            val onTime = items.filter { it.urgency(today) == ComplianceItem.Urgency.ON_TIME }
 
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp),
-            ) {
-                section("Po terminie", overdue, today, onItemClick)
-                section("Pilne (≤ 2 dni)", urgent, today, onItemClick)
-                section("W terminie", onTime, today, onItemClick)
+            if (selectedTab == 0) {
+                WaitingTab(items = state.waiting, today = today, onItemClick = onItemClick)
+            } else {
+                RejectedTab(items = state.rejected, today = today, onItemClick = onItemClick)
             }
         }
     }
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.section(
+@Composable
+private fun TabLabel(label: String, count: Int, highlight: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label)
+        if (count > 0) {
+            Spacer(Modifier.width(6.dp))
+            // Odrzucone wyróżniamy kolorem błędu — to jedyna grupa, której nie da
+            // się załatwić samym wysłaniem.
+            Badge(
+                containerColor = if (highlight) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.secondary
+                },
+            ) { Text("$count") }
+        }
+    }
+}
+
+/** Zdarzenia czekające na wysłanie — tu liczy się wyłącznie termin. */
+@Composable
+private fun WaitingTab(
+    items: List<ComplianceItem>,
+    today: LocalDate,
+    onItemClick: (Long) -> Unit,
+) {
+    if (items.isEmpty()) {
+        EmptyTab(
+            icon = Icons.Default.CheckCircle,
+            title = "Nic nie czeka na zgłoszenie",
+            description = "Wszystkie zdarzenia zostały wysłane do IRZplus.",
+        )
+        return
+    }
+
+    val overdue = items.filter { it.urgency(today) == ComplianceItem.Urgency.OVERDUE }
+    val urgent = items.filter { it.urgency(today) == ComplianceItem.Urgency.URGENT }
+    val onTime = items.filter { it.urgency(today) == ComplianceItem.Urgency.ON_TIME }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 16.dp),
+    ) {
+        item(key = "summary") {
+            Summary(overdue = overdue.size, urgent = urgent.size, onTime = onTime.size)
+        }
+        urgencySection("Po terminie", overdue, today, onItemClick)
+        urgencySection("Pilne — termin w ciągu 2 dni", urgent, today, onItemClick)
+        urgencySection("W terminie", onTime, today, onItemClick)
+    }
+}
+
+/**
+ * Zgłoszenia odrzucone przez rejestr.
+ *
+ * Termin ustawowy biegnie dalej, więc zostaje na wierszu, ale najważniejszy jest
+ * tu powód odmowy — bez poprawienia danych ponowna wysyłka skończy się tak samo.
+ */
+@Composable
+private fun RejectedTab(
+    items: List<ComplianceItem>,
+    today: LocalDate,
+    onItemClick: (Long) -> Unit,
+) {
+    if (items.isEmpty()) {
+        EmptyTab(
+            icon = Icons.Default.CheckCircle,
+            title = "Brak odrzuconych zgłoszeń",
+            description = "Rejestr nie zakwestionował żadnego z wysłanych zdarzeń.",
+        )
+        return
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 16.dp),
+    ) {
+        item(key = "rejected-intro") {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                ),
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "${items.size} ${zgloszenia(items.size)} odrzucone przez IRZplus",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "Popraw wskazane dane na karcie zwierzęcia, a potem wyślij " +
+                            "zgłoszenie ponownie. Termin 7 dni biegnie dalej.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                }
+            }
+        }
+
+        items(items, key = { it.eventId }) { item ->
+            ComplianceRow(item = item, today = today, onClick = { onItemClick(item.animalId) })
+            HorizontalDivider()
+        }
+    }
+}
+
+/**
+ * Podsumowanie liczbowe na wejściu. Trzy liczby odpowiadają na pytanie „jak jest”
+ * szybciej niż przewijanie listy; wykres przy trzech wartościach nic by nie wniósł.
+ */
+@Composable
+private fun Summary(overdue: Int, urgent: Int, onTime: Int) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (overdue > 0) {
+                MaterialTheme.colorScheme.errorContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerLow
+            },
+        ),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = when {
+                    overdue > 0 -> "$overdue ${zgloszenia(overdue)} po ustawowym terminie"
+                    urgent > 0 -> "$urgent ${zgloszenia(urgent)} do wysłania w ciągu 2 dni"
+                    else -> "Wszystko w terminie"
+                },
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (overdue > 0) {
+                    MaterialTheme.colorScheme.onErrorContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                Counter("Po terminie", overdue, MaterialTheme.colorScheme.error)
+                Counter("Pilne", urgent, MaterialTheme.colorScheme.tertiary)
+                Counter("W terminie", onTime, MaterialTheme.colorScheme.primary)
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "Zdarzenie zgłasza się do IRZplus w ciągu 7 dni od jego wystąpienia.",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (overdue > 0) {
+                    MaterialTheme.colorScheme.onErrorContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun Counter(label: String, value: Int, color: Color) {
+    Column(modifier = Modifier.semantics(mergeDescendants = true) {}) {
+        Text(
+            text = value.toString(),
+            style = MaterialTheme.typography.headlineSmall,
+            color = if (value > 0) color else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+private fun androidx.compose.foundation.lazy.LazyListScope.urgencySection(
     title: String,
     items: List<ComplianceItem>,
     today: LocalDate,
     onItemClick: (Long) -> Unit,
 ) {
     if (items.isEmpty()) return
-    item(key = "header-$title") {
+    stickyHeader(key = "header-$title") {
         Text(
             text = "$title (${items.size})",
-            style = MaterialTheme.typography.titleSmall,
+            style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .padding(horizontal = 16.dp, vertical = 6.dp),
         )
     }
     items(items, key = { it.eventId }) { item ->
@@ -112,83 +335,146 @@ private fun androidx.compose.foundation.lazy.LazyListScope.section(
 }
 
 @Composable
-private fun ComplianceRow(
-    item: ComplianceItem,
-    today: LocalDate,
-    onClick: () -> Unit,
-) {
-    Column(
+private fun ComplianceRow(item: ComplianceItem, today: LocalDate, onClick: () -> Unit) {
+    val urgency = item.urgency(today)
+    val (icon, tint) = urgency.appearance()
+
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(24.dp),
+        )
+        Spacer(Modifier.width(12.dp))
+
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = item.earTag,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontFamily = FontFamily.Monospace,
+                )
+                item.animalName?.takeIf { it.isNotBlank() }?.let {
+                    Text(
+                        text = " · $it",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
             Text(
-                text = item.earTag,
-                style = MaterialTheme.typography.titleSmall,
-                fontFamily = FontFamily.Monospace,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = item.type.label(),
+                text = "${item.type.label()} z ${item.eventDate.format(dayFormat)}",
                 style = MaterialTheme.typography.bodyMedium,
             )
-        }
-        item.animalName?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            DeadlineChip(item = item, today = today)
+
+            // Tekst pilności niesie tę samą informację co ikona i kolor —
+            // żaden z tych nośników nie występuje samodzielnie.
             Text(
-                text = "termin: ${item.deadline.format(DateTimeFormatter.ISO_LOCAL_DATE)}",
+                text = "${DeadlineText.timeLeft(item.daysLeft(today))} " +
+                    "(termin ${item.deadline.format(dayFormat)})",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = tint,
             )
-        }
-        when (item.irzStatus) {
-            IrzStatus.REJECTED -> item.irzMessage?.let {
+
+            item.statusNote()?.let {
                 Text(
-                    text = "Odrzucono przez IRZ: $it",
+                    text = it,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
+                    color = if (item.irzStatus == IrzStatus.REJECTED) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                 )
             }
-            IrzStatus.PENDING -> Text(
-                text = "Nie zgłoszono — otwórz kartę zwierzęcia, aby zgłosić.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            IrzStatus.SUBMITTED -> Text(
-                text = "Wysyłanie do IRZplus…",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            IrzStatus.CONFIRMED -> Unit
         }
+
+        // Strzałka mówi wprost, że wiersz jest klikalny i prowadzi do karty sztuki.
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
 @Composable
-private fun DeadlineChip(item: ComplianceItem, today: LocalDate) {
-    val days = item.daysLeft(today)
-    val (label, color) = when (item.urgency(today)) {
-        ComplianceItem.Urgency.OVERDUE -> "Po terminie o ${-days} dni" to MaterialTheme.colorScheme.error
-        ComplianceItem.Urgency.URGENT -> {
-            val t = if (days == 0L) "Termin dziś" else "Zostały $days dni"
-            t to MaterialTheme.colorScheme.tertiary
-        }
-        ComplianceItem.Urgency.ON_TIME -> "Zostało $days dni" to MaterialTheme.colorScheme.primary
+private fun ComplianceItem.Urgency.appearance(): Pair<ImageVector, Color> = when (this) {
+    ComplianceItem.Urgency.OVERDUE -> Icons.Default.ErrorOutline to MaterialTheme.colorScheme.error
+    ComplianceItem.Urgency.URGENT -> Icons.Default.Schedule to MaterialTheme.colorScheme.tertiary
+    ComplianceItem.Urgency.ON_TIME -> Icons.Default.CheckCircle to MaterialTheme.colorScheme.primary
+}
+
+/** Co dalej z tym zgłoszeniem — albo `null`, gdy nic nie trzeba robić. */
+private fun ComplianceItem.statusNote(): String? = when (irzStatus) {
+    IrzStatus.REJECTED -> irzMessage?.let { "Odrzucone przez IRZplus: $it" }
+        ?: "Odrzucone przez IRZplus — popraw dane i zgłoś ponownie."
+
+    IrzStatus.PENDING -> "Niezgłoszone — otwórz kartę zwierzęcia, aby wysłać."
+    IrzStatus.SUBMITTED -> "Wysyłanie do IRZplus…"
+    IrzStatus.CONFIRMED -> null
+}
+
+@Composable
+private fun AllClear(modifier: Modifier = Modifier) = EmptyTab(
+    icon = Icons.Default.CheckCircle,
+    title = "Brak terminów do pilnowania",
+    description = "Wszystkie zdarzenia są zgłoszone i potwierdzone przez IRZplus.",
+    modifier = modifier,
+)
+
+@Composable
+private fun EmptyTab(
+    icon: ImageVector,
+    title: String,
+    description: String,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(48.dp),
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(text = title, style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = description,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
     }
-    AssistChip(
-        onClick = {},
-        label = { Text(label) },
-        colors = AssistChipDefaults.assistChipColors(labelColor = color),
-    )
+}
+
+/** Odmiana rzeczownika w podsumowaniu: „1 zgłoszenie”, „2 zgłoszenia”, „5 zgłoszeń”. */
+private fun zgloszenia(count: Int): String {
+    val last = count % 10
+    val lastTwo = count % 100
+    return when {
+        count == 1 -> "zgłoszenie"
+        last in 2..4 && lastTwo !in 12..14 -> "zgłoszenia"
+        else -> "zgłoszeń"
+    }
 }
 
 private fun EventType.label(): String = when (this) {

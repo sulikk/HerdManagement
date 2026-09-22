@@ -452,3 +452,25 @@ def test_chat_bez_klucza_zwraca_503(client: TestClient, monkeypatch: pytest.Monk
     monkeypatch.setattr("app.assistant.llm.api_key", lambda: "")
     response = client.post("/assistant/chat", json={"message": "cześć"})
     assert response.status_code == 503
+
+
+def test_grupy_uzytkowe_rozrozniaja_plec_powyzej_wieku_cielecego():
+    """Spójność z ekranem statystyk: roczny samiec to byczek, nie „młodzież”.
+
+    Asystent i statystyki opisują to samo stado, więc muszą używać tego samego
+    podziału — inaczej te same zwierzęta liczą się inaczej w dwóch miejscach.
+    """
+    from datetime import date
+
+    from app.assistant.tools import _age_group
+    from app.models import Sex
+
+    today = date(2026, 9, 22)
+    roczny = date(2025, 8, 22)
+
+    assert _age_group(roczny, Sex.MALE, today) == "byczki (6-24 mies.)"
+    assert _age_group(roczny, Sex.FEMALE, today) == "jałówki (6-24 mies.)"
+    assert _age_group(date(2026, 6, 22), Sex.MALE, today) == "cielęta (do 6 mies.)"
+    assert _age_group(date(2020, 1, 1), Sex.MALE, today) == "buhaje (od 24 mies.)"
+    assert _age_group(date(2020, 1, 1), Sex.FEMALE, today) == "krowy (od 24 mies.)"
+    assert _age_group(None, Sex.FEMALE, today) == "bez daty urodzenia"

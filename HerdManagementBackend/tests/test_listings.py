@@ -35,6 +35,28 @@ def _listing(client: TestClient, animal_id: int, price: float = 6500.0) -> dict:
     return response.json()
 
 
+def _registered_animal(client: TestClient, irz_store) -> dict:
+    """Zwierzę, którego dane zgadzają się z rejestrem — takie da się opublikować."""
+    registry = irz_store.get_animal(SEED_ZWIERZE)
+    return _animal(
+        client,
+        ear_tag=SEED_ZWIERZE,
+        birth_date=registry.dataUrodzenia.isoformat(),
+        breed=registry.rasa,
+        herd_id=registry.numerSiedzibyStada,
+        sex="female",
+    )
+
+
+def _published_listing(client: TestClient, irz_store) -> dict:
+    """Skrót dla testów, które potrzebują ogłoszenia już widocznego dla kupujących."""
+    animal = _registered_animal(client, irz_store)
+    listing = _listing(client, animal["id"])
+    response = client.post(f"/listings/{listing['id']}/publish")
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
 # --- F13: formularz wypełniony z karty zwierzęcia -----------------------
 
 def test_szkic_ogloszenia_bierze_dane_z_karty_zwierzecia(client: TestClient):
@@ -74,8 +96,8 @@ def test_nowe_ogloszenie_jest_szkicem_a_nie_publikacja(client: TestClient):
     assert listing["published_at"] is None
 
 
-def test_dopiero_publish_czyni_ogloszenie_widocznym(client: TestClient):
-    animal = _animal(client)
+def test_dopiero_publish_czyni_ogloszenie_widocznym(client: TestClient, irz_store):
+    animal = _registered_animal(client, irz_store)
     listing = _listing(client, animal["id"])
 
     published = client.post(f"/listings/{listing['id']}/publish")
@@ -84,14 +106,71 @@ def test_dopiero_publish_czyni_ogloszenie_widocznym(client: TestClient):
     assert published.json()["published_at"] is not None
 
 
-def test_publikacja_jest_idempotentna(client: TestClient):
-    animal = _animal(client)
+def test_publikacja_jest_idempotentna(client: TestClient, irz_store):
+    animal = _registered_animal(client, irz_store)
     listing = _listing(client, animal["id"])
     first = client.post(f"/listings/{listing['id']}/publish").json()
     second = client.post(f"/listings/{listing['id']}/publish").json()
 
     assert second["status"] == "published"
     assert second["published_at"] == first["published_at"]
+
+
+# --- F14 jako warunek publikacji ----------------------------------------
+
+def test_bez_potwierdzenia_w_irz_nie_da_sie_opublikowac(client: TestClient):
+    """Odznaka jest warunkiem publikacji, a nie samą informacją dla kupującego."""
+    animal = _animal(client)  # kolczyk spoza rejestru
+    listing = _listing(client, animal["id"])
+
+    response = client.post(f"/listings/{listing['id']}/publish")
+    assert response.status_code == 409
+    assert "bez potwierdzenia danych w IRZplus" in response.json()["detail"]
+    assert client.get(f"/listings/{listing['id']}").json()["status"] == "draft"
+
+
+def test_publikacja_sprawdza_rejestr_na_nowo_a_nie_stara_odznake(client: TestClient, irz_store):
+    """Sedno zgłoszonego błędu: sprzedanej sztuki nie da się wystawić ponownie.
+
+    Ogłoszenie dostaje odznakę, a dopiero potem zwierzę zostaje rozliczone
+    w rejestrze. Gdyby publikacja ufała zapisanemu znacznikowi, tę samą sztukę
+    można by wystawiać w nieskończoność.
+    """
+    animal = _registered_animal(client, irz_store)
+    listing = _listing(client, animal["id"])
+    assert client.post(f"/listings/{listing['id']}/verify").json()["irz_verified"] is True
+
+    irz_store.close_animal(SEED_ZWIERZE)  # zgłoszone ubycie
+
+    response = client.post(f"/listings/{listing['id']}/publish")
+    assert response.status_code == 409
+    assert "rozliczone" in response.json()["detail"]
+    assert client.get(f"/listings/{listing['id']}").json()["status"] == "draft"
+
+
+def test_nieudana_publikacja_odbiera_odznake(client: TestClient, irz_store):
+    animal = _registered_animal(client, irz_store)
+    listing = _listing(client, animal["id"])
+    client.post(f"/listings/{listing['id']}/verify")
+    irz_store.close_animal(SEED_ZWIERZE)
+
+    client.post(f"/listings/{listing['id']}/publish")
+
+    # Próba publikacji zostawia aktualny stan weryfikacji, a nie stary „potwierdzone”.
+    current = client.get(f"/listings/{listing['id']}").json()
+    assert current["irz_verified"] is False
+    assert "rozliczone" in current["irz_message"]
+
+
+def test_publikacja_odswieza_odznake_bez_wczesniejszego_verify(client: TestClient, irz_store):
+    """Publikacja sama weryfikuje — hodowca nie musi klikać dwóch przycisków."""
+    animal = _registered_animal(client, irz_store)
+    listing = _listing(client, animal["id"])
+    assert listing["irz_verified"] is False
+
+    published = client.post(f"/listings/{listing['id']}/publish")
+    assert published.status_code == 200, published.text
+    assert published.json()["irz_verified"] is True
 
 
 def test_jedno_zwierze_nie_moze_miec_dwoch_aktywnych_ogloszen(client: TestClient):
@@ -111,10 +190,8 @@ def test_wycofane_ogloszenie_zwalnia_zwierze(client: TestClient):
     assert again.status_code == 201
 
 
-def test_sprzedanego_ogloszenia_nie_da_sie_edytowac(client: TestClient):
-    animal = _animal(client)
-    listing = _listing(client, animal["id"])
-    client.post(f"/listings/{listing['id']}/publish")
+def test_sprzedanego_ogloszenia_nie_da_sie_edytowac(client: TestClient, irz_store):
+    listing = _published_listing(client, irz_store)
     client.post(f"/listings/{listing['id']}/sold")
 
     response = client.put(f"/listings/{listing['id']}", json={"price": 100.0})
@@ -210,10 +287,8 @@ def test_edycja_ogloszenia_uniewaznia_odznake(client: TestClient, irz_store):
 
 # --- Zapytania kupujących -----------------------------------------------
 
-def test_kupujacy_wysyla_zapytanie_do_opublikowanego_ogloszenia(client: TestClient):
-    animal = _animal(client)
-    listing = _listing(client, animal["id"])
-    client.post(f"/listings/{listing['id']}/publish")
+def test_kupujacy_wysyla_zapytanie_do_opublikowanego_ogloszenia(client: TestClient, irz_store):
+    listing = _published_listing(client, irz_store)
 
     response = client.post(
         f"/listings/{listing['id']}/inquiries",
@@ -252,12 +327,12 @@ def test_usuniecie_ogloszenia_kasuje_zapytania(client: TestClient):
 
 # --- Udział w synchronizacji przyrostowej -------------------------------
 
-def test_ogloszenie_i_zapytanie_trafiaja_do_synchronizacji(client: TestClient):
-    animal = _animal(client)
+def test_ogloszenie_i_zapytanie_trafiaja_do_synchronizacji(client: TestClient, irz_store):
+    animal = _registered_animal(client, irz_store)
     checkpoint = client.get("/sync/changes").json()["server_time"]
 
     listing = _listing(client, animal["id"])
-    client.post(f"/listings/{listing['id']}/publish")
+    assert client.post(f"/listings/{listing['id']}/publish").status_code == 200
     client.post(
         f"/listings/{listing['id']}/inquiries",
         json={"buyer": "Jan Kowalski", "message": "Czy dowieziecie?"},
@@ -270,10 +345,8 @@ def test_ogloszenie_i_zapytanie_trafiaja_do_synchronizacji(client: TestClient):
     assert changes["inquiries"][0]["buyer"] == "Jan Kowalski"
 
 
-def test_usuniete_ogloszenie_zostawia_nagrobki(client: TestClient):
-    animal = _animal(client)
-    listing = _listing(client, animal["id"])
-    client.post(f"/listings/{listing['id']}/publish")
+def test_usuniete_ogloszenie_zostawia_nagrobki(client: TestClient, irz_store):
+    listing = _published_listing(client, irz_store)
     inquiry = client.post(
         f"/listings/{listing['id']}/inquiries",
         json={"buyer": "Jan Kowalski", "message": "Pytanie"},

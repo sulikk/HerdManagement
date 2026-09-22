@@ -7,8 +7,11 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -31,6 +34,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -56,10 +61,13 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.herdmanagementmobile.domain.model.DeadlineText
 import com.example.herdmanagementmobile.domain.model.IrzStatus
+import com.example.herdmanagementmobile.domain.model.Sex
 import com.example.herdmanagementmobile.domain.stats.AgeGroup
 import com.example.herdmanagementmobile.domain.stats.HerdStats
 import com.example.herdmanagementmobile.domain.stats.MonthlyMovement
+import com.example.herdmanagementmobile.ui.common.SectionCard
 import java.time.format.TextStyle
 import java.util.Locale
 import kotlin.math.max
@@ -87,7 +95,7 @@ private fun chartColors(): ChartColors = if (isSystemInDarkTheme()) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StatisticsScreen(
-    onBack: () -> Unit,
+    onBack: (() -> Unit)? = null,
     viewModel: StatisticsViewModel = hiltViewModel(),
 ) {
     val stats by viewModel.stats.collectAsState()
@@ -97,7 +105,7 @@ fun StatisticsScreen(
             TopAppBar(
                 title = { Text("Statystyki stada") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    if (onBack != null) IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Wróć")
                     }
                 },
@@ -130,86 +138,313 @@ fun StatisticsScreen(
     }
 }
 
+private enum class StatsTab(val label: String) {
+    OVERVIEW("Przegląd"),
+    STRUCTURE("Struktura"),
+    MOVEMENT("Ruch"),
+    IRZ("IRZplus"),
+}
+
+/**
+ * Statystyki rozłożone na zakładki.
+ *
+ * Wcześniej wszystkie sekcje leżały jedna pod drugą w jednym przewijaniu —
+ * cztery różne pytania („ile mam sztuk”, „jaka jest struktura”, „co się działo
+ * przez rok”, „co zalega w IRZ”) konkurowały o tę samą przestrzeń. Każde z nich
+ * ma teraz własną zakładkę, a pierwsza odpowiada na najczęstsze z nich bez
+ * przewijania.
+ */
 @Composable
 private fun StatisticsContent(stats: HerdStats, modifier: Modifier = Modifier) {
     val colors = chartColors()
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StatTile("W stadzie", stats.inHerd.toString(), Modifier.weight(1f))
-            StatTile("W karencji", stats.animalsInWithdrawal.toString(), Modifier.weight(1f))
-            StatTile("Leczenia (12 mies.)", stats.treatmentsLast12Months.toString(), Modifier.weight(1f))
+    var selected by rememberSaveable { mutableStateOf(0) }
+    val tab = StatsTab.entries[selected]
+
+    Column(modifier = modifier.fillMaxSize()) {
+        ScrollableTabRow(selectedTabIndex = selected, edgePadding = 16.dp) {
+            StatsTab.entries.forEachIndexed { index, entry ->
+                Tab(
+                    selected = selected == index,
+                    onClick = { selected = index },
+                    text = { Text(entry.label) },
+                )
+            }
         }
 
-        SectionCard("Struktura stada") {
-            val rows = AgeGroup.entries
-                .map { it.label() to (stats.ageGroups[it] ?: 0) }
-                .filterIndexed { i, (_, count) ->
-                    count > 0 || AgeGroup.entries[i] !in setOf(AgeGroup.ADULTS_OTHER, AgeGroup.UNKNOWN_AGE)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            when (tab) {
+                StatsTab.OVERVIEW -> OverviewTab(stats)
+                StatsTab.STRUCTURE -> StructureTab(stats, colors)
+                StatsTab.MOVEMENT -> SectionCard("Ruch stada — ostatnie 12 miesięcy") {
+                    MovementSection(
+                        movements = stats.movements,
+                        totals = stats.movementTotals,
+                        colors = colors,
+                    )
                 }
-            HorizontalBars(rows = rows, color = colors.bar)
-            if (stats.leftHerd > 0) {
-                Caption("Poza stadem (ubyłe lub padłe): ${stats.leftHerd}")
+
+                StatsTab.IRZ -> IrzTab(stats, colors)
             }
         }
+    }
+}
 
-        if (stats.breeds.isNotEmpty()) {
-            SectionCard("Rasy") {
-                HorizontalBars(rows = stats.breeds, color = colors.bar)
-            }
-        }
+/**
+ * Odpowiedź na pytanie „jak stoi stado” bez przewijania i bez wykresu.
+ * Liczba jest tu formą docelową — wykres nie dodałby niczego do pojedynczej wartości.
+ */
+@Composable
+private fun OverviewTab(stats: HerdStats) {
+    val colors = chartColors()
+    val pending = (stats.irzStatusCounts[IrzStatus.PENDING] ?: 0) +
+        (stats.irzStatusCounts[IrzStatus.SUBMITTED] ?: 0)
+    val rejected = stats.irzStatusCounts[IrzStatus.REJECTED] ?: 0
 
-        SectionCard("Ruch stada — ostatnie 12 miesięcy") {
-            MovementSection(movements = stats.movements, totals = stats.movementTotals, colors = colors)
-        }
+    HeroNumber(
+        value = stats.inHerd.toString(),
+        label = "sztuk w stadzie",
+        caption = if (stats.leftHerd > 0) {
+            "Poza stadem (ubyłe lub padłe): ${stats.leftHerd}"
+        } else {
+            "Stan na dziś"
+        },
+    )
 
-        SectionCard("Zgłoszenia do IRZplus") {
-            val counts = stats.irzStatusCounts
-            StatusRow(Icons.Default.CheckCircle, colors.good, "Potwierdzone", counts[IrzStatus.CONFIRMED] ?: 0)
-            StatusRow(
-                Icons.Default.Schedule,
-                colors.warning,
-                "Oczekujące na wysłanie lub odpowiedź",
-                (counts[IrzStatus.PENDING] ?: 0) + (counts[IrzStatus.SUBMITTED] ?: 0),
+    StatTileRow {
+        StatTile("W karencji", stats.animalsInWithdrawal.toString())
+        StatTile("Leczenia (rok)", stats.treatmentsLast12Months.toString())
+        StatTile("Średni wiek", stats.averageAgeMonths.asAge())
+    }
+
+    // Bilans roku jest ciekawszy niż suma ruchów: mówi, czy stado rośnie.
+    val totals = stats.movementTotals
+    val net = totals.inflow - totals.outflow
+    SectionCard("Bilans 12 miesięcy") {
+        Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            Counter("Przybyło", totals.inflow, colors.inflow)
+            Counter("Ubyło", totals.outflow, colors.outflow)
+            Counter(
+                label = "Zmiana netto",
+                value = net,
+                color = if (net < 0) colors.outflow else colors.inflow,
+                prefix = if (net > 0) "+" else "",
             )
-            StatusRow(Icons.Default.Error, colors.critical, "Odrzucone", counts[IrzStatus.REJECTED] ?: 0)
         }
+    }
+
+    // Sekcja pojawia się tylko wtedy, gdy jest co zrobić — pusta lista zadań
+    // nie musi zajmować miejsca.
+    if (pending > 0 || rejected > 0) {
+        SectionCard("Wymaga uwagi") {
+            if (pending > 0) {
+                StatusRow(
+                    Icons.Default.Schedule,
+                    colors.warning,
+                    "Zdarzenia czekające na zgłoszenie",
+                    pending,
+                )
+            }
+            if (rejected > 0) {
+                StatusRow(
+                    Icons.Default.Error,
+                    colors.critical,
+                    "Zgłoszenia odrzucone przez rejestr",
+                    rejected,
+                )
+            }
+            Caption("Zdarzenie trzeba zgłosić do IRZplus w ciągu 7 dni od jego wystąpienia.")
+        }
+    }
+}
+
+@Composable
+private fun StructureTab(stats: HerdStats, colors: ChartColors) {
+    SectionCard(
+        title = "Grupy użytkowe",
+        hint = "Podział według wieku i płci — tak jak opisuje się stado w hodowli.",
+    ) {
+        // Kategorie puste z natury (nieokreślona płeć, brak daty urodzenia)
+        // pokazujemy tylko wtedy, gdy faktycznie coś w nich jest.
+        val optional = setOf(AgeGroup.OTHER_SEX, AgeGroup.UNKNOWN_AGE)
+        val rows = AgeGroup.entries
+            .map { group -> group to (stats.ageGroups[group] ?: 0) }
+            .filter { (group, count) -> count > 0 || group !in optional }
+            .map { (group, count) -> group.label() to count }
+
+        HorizontalBars(rows = rows, color = colors.bar)
+        if (stats.leftHerd > 0) {
+            Caption("Poza stadem (ubyłe lub padłe): ${stats.leftHerd}")
+        }
+    }
+
+    SectionCard("Płeć i wiek") {
+        Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            Counter("Samice", stats.sexCounts[Sex.FEMALE] ?: 0, colors.bar)
+            Counter("Samce", stats.sexCounts[Sex.MALE] ?: 0, colors.outflow)
+            val other = stats.sexCounts[Sex.OTHER] ?: 0
+            if (other > 0) {
+                Counter("Nieokreślona", other, MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Caption("Średni wiek stada: ${stats.averageAgeMonths.asAge()}")
+    }
+
+    if (stats.breeds.isNotEmpty()) {
+        SectionCard("Rasy") {
+            HorizontalBars(rows = stats.breeds, color = colors.bar)
+            Caption("Wykaz obejmuje sztuki obecnie w stadzie.")
+        }
+    }
+}
+
+@Composable
+private fun IrzTab(stats: HerdStats, colors: ChartColors) {
+    val counts = stats.irzStatusCounts
+
+    // Terminowość to najbliższa miara celu aplikacji: czy hodowca zdąża w 7 dni.
+    SectionCard("Terminowość zgłoszeń") {
+        val percent = stats.reporting.onTimePercent
+        if (percent == null) {
+            Caption("Nie wysłano jeszcze żadnego zgłoszenia — nie ma czego podsumować.")
+        } else {
+            Text(
+                text = "$percent%",
+                style = MaterialTheme.typography.displaySmall,
+                color = when {
+                    percent >= 90 -> colors.good
+                    percent >= 70 -> colors.warning
+                    else -> colors.critical
+                },
+            )
+            Text("zgłoszeń wysłanych w ustawowym terminie", style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                Counter("W terminie", stats.reporting.onTime, colors.good)
+                Counter("Po terminie", stats.reporting.late, colors.critical)
+            }
+            Caption("Liczone są wyłącznie zdarzenia już wysłane do rejestru.")
+        }
+    }
+
+    SectionCard("Zgłoszenia do IRZplus") {
+        StatusRow(Icons.Default.CheckCircle, colors.good, "Potwierdzone", counts[IrzStatus.CONFIRMED] ?: 0)
+        StatusRow(
+            Icons.Default.Schedule,
+            colors.warning,
+            "Oczekujące na wysłanie lub odpowiedź",
+            (counts[IrzStatus.PENDING] ?: 0) + (counts[IrzStatus.SUBMITTED] ?: 0),
+        )
+        StatusRow(Icons.Default.Error, colors.critical, "Odrzucone", counts[IrzStatus.REJECTED] ?: 0)
+        Caption(
+            "Odrzucone zgłoszenia wymagają poprawienia danych i ponownej wysyłki " +
+                "z karty zwierzęcia.",
+        )
     }
 }
 
 // --- Elementy ------------------------------------------------------------
 
+/**
+ * Liczba wiodąca. Jedna wartość nie potrzebuje wykresu — potrzebuje rozmiaru
+ * i podpisu, który mówi, czego dotyczy i na kiedy jest aktualna.
+ */
 @Composable
-private fun StatTile(label: String, value: String, modifier: Modifier = Modifier) {
-    Card(modifier = modifier) {
-        Column(Modifier.padding(12.dp)) {
-            Text(value, style = MaterialTheme.typography.headlineMedium)
-            Text(
-                label,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-@Composable
-private fun SectionCard(title: String, content: @Composable () -> Unit) {
+private fun HeroNumber(value: String, label: String, caption: String) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier
+                .padding(20.dp)
+                .semantics(mergeDescendants = true) {},
         ) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            content()
+            Text(value, style = MaterialTheme.typography.displaySmall)
+            Text(label, style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(4.dp))
+            Caption(caption)
+        }
+    }
+}
+
+/** Liczba z podpisem — używana w rzędach podsumowań. */
+@Composable
+private fun Counter(label: String, value: Int, color: Color, prefix: String = "") {
+    Column(modifier = Modifier.semantics(mergeDescendants = true) {}) {
+        Text(
+            text = "$prefix$value",
+            style = MaterialTheme.typography.headlineSmall,
+            color = if (value == 0) MaterialTheme.colorScheme.onSurfaceVariant else color,
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** Wiek w miesiącach na czytelny opis — „26 mies.” mówi mniej niż „2 lata 2 mies.”. */
+private fun Int?.asAge(): String {
+    val months = this ?: return "—"
+    val years = months / 12
+    val rest = months % 12
+    return when {
+        years == 0 -> "$months mies."
+        rest == 0 -> "$years ${DeadlineText.years(years)}"
+        else -> "$years ${DeadlineText.years(years)} $rest mies."
+    }
+}
+
+/**
+ * Rząd kafelków o jednakowej wysokości.
+ *
+ * Same `weight(1f)` wyrównuje tylko szerokość — kafelek z dłuższym podpisem
+ * łamał tekst na dwie linie i był wyższy od sąsiadów, przez co rząd wyglądał
+ * na krzywy. `IntrinsicSize.Min` każe wszystkim przyjąć wysokość najwyższego.
+ */
+@Composable
+private fun StatTileRow(content: @Composable RowScope.() -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        content = content,
+    )
+}
+
+@Composable
+private fun RowScope.StatTile(label: String, value: String) {
+    Card(
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight()
+            .semantics(mergeDescendants = true) {},
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxHeight()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = value,
+                style = MaterialTheme.typography.headlineSmall,
+                maxLines = 1,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -448,10 +683,11 @@ private fun StatusRow(icon: ImageVector, tint: Color, label: String, count: Int)
 }
 
 private fun AgeGroup.label(): String = when (this) {
-    AgeGroup.CALVES -> "Cielęta (< 6 mies.)"
-    AgeGroup.YOUNGSTOCK -> "Młodzież (6–24 mies.)"
-    AgeGroup.COWS -> "Samice ≥ 24 mies."
-    AgeGroup.BULLS -> "Samce ≥ 24 mies."
-    AgeGroup.ADULTS_OTHER -> "Dorosłe, płeć inna"
+    AgeGroup.CALVES -> "Cielęta (do 6 mies.)"
+    AgeGroup.HEIFERS -> "Jałówki (6–24 mies.)"
+    AgeGroup.YOUNG_BULLS -> "Byczki (6–24 mies.)"
+    AgeGroup.COWS -> "Krowy (od 24 mies.)"
+    AgeGroup.BULLS -> "Buhaje (od 24 mies.)"
+    AgeGroup.OTHER_SEX -> "Płeć nieokreślona"
     AgeGroup.UNKNOWN_AGE -> "Bez daty urodzenia"
 }

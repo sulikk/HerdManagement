@@ -126,6 +126,9 @@ kształtem modułu:
 - **F12 — publikacja po jawnej decyzji.** Ogłoszenie powstaje jako `draft`
   i dopiero `POST /listings/{id}/publish` czyni je widocznym; aplikacja pyta
   o potwierdzenie w dialogu. Wymusza to model danych, nie sam interfejs.
+  Publikacja **wymaga pozytywnej weryfikacji w IRZplus i sprawdza ją na nowo**
+  w momencie publikowania, zamiast ufać zapisanej odznace — inaczej sztukę raz
+  zweryfikowaną, a potem sprzedaną, można by wystawiać w nieskończoność.
 - **F14 — odznaka „dane potwierdzone w IRZplus".** `POST /listings/{id}/verify`
   porównuje kartę zwierzęcia z rejestrem: sprawdza, czy kolczyk w nim figuruje,
   czy sztuka nie jest rozliczona (ubycie/padnięcie) oraz czy data urodzenia, płeć,

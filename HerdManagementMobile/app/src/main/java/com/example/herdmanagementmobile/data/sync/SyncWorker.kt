@@ -18,6 +18,7 @@ import com.example.herdmanagementmobile.data.remote.dto.toDto
 import com.example.herdmanagementmobile.data.remote.dto.toIrzResultDto
 import com.example.herdmanagementmobile.data.remote.irzplus.IrzplusClient
 import com.example.herdmanagementmobile.domain.model.IrzStatus
+import com.example.herdmanagementmobile.domain.model.ListingStatus
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException
@@ -131,8 +132,7 @@ class SyncWorker @AssistedInject constructor(
                 deleteRemote(entry, SyncContract.Entity.TREATMENT) { api.deleteTreatment(it) }
             SyncContract.Entity.LISTING to SyncContract.Operation.CREATE -> pushListing(entry)
             SyncContract.Entity.LISTING to SyncContract.Operation.UPDATE -> updateListing(entry)
-            SyncContract.Entity.LISTING to SyncContract.Operation.PUBLISH ->
-                listingAction(entry) { api.publishListing(it) }
+            SyncContract.Entity.LISTING to SyncContract.Operation.PUBLISH -> publishListing(entry)
             SyncContract.Entity.LISTING to SyncContract.Operation.WITHDRAW ->
                 listingAction(entry) { api.withdrawListing(it) }
             SyncContract.Entity.LISTING to SyncContract.Operation.MARK_SOLD ->
@@ -264,6 +264,42 @@ class SyncWorker @AssistedInject constructor(
             ensureRemoteListing(localId)?.let { call(it) }
         }
     }
+
+    /**
+     * Publikacja ogłoszenia (F12 + F14).
+     *
+     * Backend przy publikacji sprawdza rejestr na nowo i potrafi odmówić — na
+     * przykład gdy sztuka została w międzyczasie rozliczona jako ubyła. Aplikacja
+     * zmieniła status optymistycznie, więc odmowę trzeba cofnąć lokalnie, inaczej
+     * hodowca widziałby „opublikowane” dla ogłoszenia, którego nie ma na giełdzie.
+     *
+     * Odmowa jest ostateczna, nie chwilowa — wpis kończy się jako wykonany,
+     * bo ponawianie go niczego nie zmieni.
+     */
+    private suspend fun publishListing(entry: SyncQueueEntity) {
+        val localId = localIdOf(entry)
+        val remoteId = ensureRemoteListing(localId) ?: return
+        try {
+            api.publishListing(remoteId)
+        } catch (e: HttpException) {
+            if (e.code() != 409) throw e
+            val current = listingDao.getById(localId) ?: return
+            listingDao.update(
+                current.copy(
+                    status = ListingStatus.DRAFT,
+                    publishedAt = null,
+                    irzVerified = false,
+                    irzMessage = detailOf(e) ?: "Rejestr IRZplus odmówił publikacji.",
+                ),
+            )
+        }
+    }
+
+    /** Treść komunikatu z odpowiedzi błędu FastAPI (`{"detail": "..."}`). */
+    private fun detailOf(e: HttpException): String? = runCatching {
+        val body = e.response()?.errorBody()?.string().orEmpty()
+        json.decodeFromString<ErrorDetail>(body).detail?.trim()?.takeIf { it.isNotEmpty() }
+    }.getOrNull()
 
     /**
      * Weryfikacja wobec rejestru IRZplus (F14). Wynik zapisujemy od razu lokalnie,

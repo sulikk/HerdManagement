@@ -13,6 +13,10 @@ data class LocalIdPayload(val localId: Long)
 @Serializable
 data class LocalIdOnly(val id: Long = 0L)
 
+/** Komunikat bledu z backendu FastAPI (`{"detail": "..."}`). */
+@Serializable
+data class ErrorDetail(val detail: String? = null)
+
 /** Wspólne stałe opisujące wpisy w kolejce synchronizacji. */
 object SyncContract {
 

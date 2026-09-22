@@ -281,17 +281,29 @@ def _in_herd(animal: models.Animal) -> bool:
     return last is None or last.type not in (models.EventType.DEPARTURE, models.EventType.DEATH)
 
 
-def _age_group(birth_date: date | None, today: date) -> str:
+def _age_group(birth_date: date | None, sex: models.Sex, today: date) -> str:
+    """Grupa użytkowa sztuki — ten sam podział co na ekranie statystyk.
+
+    Powyżej wieku cielęcego o kategorii decyduje płeć: roczny samiec to byczek,
+    a nie bezpłciowa „młodzież”. Rozjazd między asystentem a statystykami
+    w aplikacji byłby widoczny od razu — obie liczby opisują to samo stado.
+    """
     if birth_date is None:
-        return "brak daty urodzenia"
+        return "bez daty urodzenia"
+
     months = (today.year - birth_date.year) * 12 + today.month - birth_date.month
     if today.day < birth_date.day:
         months -= 1
+
     if months < 6:
         return "cielęta (do 6 mies.)"
-    if months < 24:
-        return "młodzież (6-24 mies.)"
-    return "dorosłe (powyżej 24 mies.)"
+
+    adult = months >= 24
+    if sex == models.Sex.FEMALE:
+        return "krowy (od 24 mies.)" if adult else "jałówki (6-24 mies.)"
+    if sex == models.Sex.MALE:
+        return "buhaje (od 24 mies.)" if adult else "byczki (6-24 mies.)"
+    return "płeć nieokreślona"
 
 
 # --- Wykonanie narzędzi odczytowych -------------------------------------
@@ -341,7 +353,7 @@ def _statystyki_stada(db: Session, params: dict[str, Any], today: date) -> dict[
     for animal in w_stadzie:
         plec_label = SEX_LABEL.get(animal.sex, animal.sex.value)
         plec[plec_label] = plec.get(plec_label, 0) + 1
-        grupa = _age_group(animal.birth_date, today)
+        grupa = _age_group(animal.birth_date, animal.sex, today)
         wiek[grupa] = wiek.get(grupa, 0) + 1
         rasa = animal.breed or "brak rasy"
         rasy[rasa] = rasy.get(rasa, 0) + 1

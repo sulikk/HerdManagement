@@ -18,16 +18,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CloudSync
-import androidx.compose.material.icons.filled.EventAvailable
-import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -46,6 +42,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
@@ -65,11 +64,7 @@ private val dateFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.y
 fun AnimalListScreen(
     onAnimalClick: (Long) -> Unit,
     onAddClick: () -> Unit,
-    onComplianceClick: () -> Unit,
     onSettingsClick: () -> Unit,
-    onStatisticsClick: () -> Unit,
-    onAssistantClick: () -> Unit,
-    onListingsClick: () -> Unit,
     viewModel: AnimalListViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
@@ -81,20 +76,8 @@ fun AnimalListScreen(
                 title = { Text("Stado") },
                 actions = {
                     SyncStatusChip(status = syncStatus, onClick = viewModel::syncNow)
-                    IconButton(onClick = onAssistantClick) {
-                        Icon(Icons.Default.Psychology, contentDescription = "Asystent")
-                    }
-                    IconButton(onClick = onListingsClick) {
-                        Icon(Icons.Default.Storefront, contentDescription = "Ogłoszenia sprzedażowe")
-                    }
-                    IconButton(onClick = onStatisticsClick) {
-                        Icon(Icons.Default.BarChart, contentDescription = "Statystyki stada")
-                    }
-                    IconButton(onClick = onComplianceClick) {
-                        Icon(Icons.Default.EventAvailable, contentDescription = "Zgodność z IRZ")
-                    }
                     IconButton(onClick = onSettingsClick) {
-                        Icon(Icons.Default.Settings, contentDescription = "Ustawienia gospodarstwa")
+                        Icon(Icons.Default.Settings, contentDescription = "Ustawienia")
                     }
                 },
             )

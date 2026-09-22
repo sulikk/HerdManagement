@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from app import crud, schemas
 from app.database import get_db
 from app.irzplus import router as irzplus_module
-from app.listings.verification import verify_animal
+from app.listings.verification import VerificationResult, verify_animal
 from app.models import ListingStatus
 
 router = APIRouter(tags=["listings"])
@@ -95,11 +95,15 @@ def update_listing(
 
 @router.post("/listings/{listing_id}/publish", response_model=schemas.ListingRead)
 def publish_listing(listing_id: int, db: Session = Depends(get_db)):
-    """Jawna publikacja ogłoszenia — wymaganie F12.
+    """Jawna publikacja ogłoszenia — wymagania F12 i F14.
 
-    Świadomie nie wymagamy tu odznaki IRZplus: hodowca ma prawo wystawić zwierzę,
-    którego dane jeszcze nie przeszły weryfikacji. Brak odznaki jest widoczny dla
-    kupującego i to on ocenia ryzyko — blokada byłaby nadmiarowa wobec F14.
+    Publikacja wymaga pozytywnej weryfikacji wobec rejestru IRZplus i **sprawdza
+    ją na nowo w tym momencie**, zamiast ufać zapisanej odznace. Bez tego dało się
+    wystawić tę samą sztukę wielokrotnie: po sprzedaży zwierzę jest w rejestrze
+    rozliczone, ale stary znacznik `irz_verified` nadal by na to pozwalał.
+
+    Świeże sprawdzenie zamyka też okno między weryfikacją a publikacją — jeśli
+    w międzyczasie zgłoszono ubycie albo padnięcie, ogłoszenie nie pójdzie dalej.
     """
     listing = _listing_or_404(db, listing_id)
     if listing.status == ListingStatus.PUBLISHED:
@@ -108,6 +112,15 @@ def publish_listing(listing_id: int, db: Session = Depends(get_db)):
         raise HTTPException(
             status.HTTP_409_CONFLICT, detail="Ogłoszenie jest już rozliczone jako sprzedane."
         )
+
+    result = _run_verification(db, listing)
+    if not result.verified:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="Nie można opublikować ogłoszenia bez potwierdzenia danych w IRZplus. "
+            + (result.message or ""),
+        )
+
     return crud.set_listing_status(db, listing, ListingStatus.PUBLISHED)
 
 
@@ -131,6 +144,23 @@ def mark_sold(listing_id: int, db: Session = Depends(get_db)):
 def verify_listing(listing_id: int, db: Session = Depends(get_db)):
     """Porównuje dane zwierzęcia z rejestrem IRZplus i ustawia odznakę (F14)."""
     listing = _listing_or_404(db, listing_id)
+    result = _run_verification(db, listing)
+
+    return schemas.ListingVerification(
+        listing_id=listing.id,
+        irz_verified=listing.irz_verified,
+        irz_verified_at=listing.irz_verified_at,
+        message=listing.irz_message,
+        discrepancies=result.discrepancies,
+    )
+
+
+def _run_verification(db: Session, listing) -> VerificationResult:
+    """Sprawdza ogłoszenie wobec rejestru i zapisuje wynik na ogłoszeniu.
+
+    Wspólne dla ``/verify`` i ``/publish`` — publikacja nie może polegać na
+    znaczniku zapisanym kiedyś wcześniej.
+    """
     animal = crud.get_animal(db, listing.animal_id)
     if animal is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Nie znaleziono zwierzęcia.")
@@ -141,15 +171,8 @@ def verify_listing(listing_id: int, db: Session = Depends(get_db)):
         registry=store.get_animal(animal.ear_tag),
         closed=store.is_closed(animal.ear_tag),
     )
-    saved = crud.save_listing_verification(db, listing, result.verified, result.message)
-
-    return schemas.ListingVerification(
-        listing_id=saved.id,
-        irz_verified=saved.irz_verified,
-        irz_verified_at=saved.irz_verified_at,
-        message=saved.irz_message,
-        discrepancies=result.discrepancies,
-    )
+    crud.save_listing_verification(db, listing, result.verified, result.message)
+    return result
 
 
 @router.delete("/listings/{listing_id}", status_code=status.HTTP_204_NO_CONTENT)
