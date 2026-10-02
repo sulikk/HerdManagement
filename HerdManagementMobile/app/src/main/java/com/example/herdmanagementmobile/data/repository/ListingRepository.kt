@@ -2,6 +2,7 @@ package com.example.herdmanagementmobile.data.repository
 
 import com.example.herdmanagementmobile.data.local.dao.AnimalDao
 import com.example.herdmanagementmobile.data.local.dao.InquiryDao
+import com.example.herdmanagementmobile.data.local.dao.SyncDao
 import com.example.herdmanagementmobile.data.local.dao.ListingDao
 import com.example.herdmanagementmobile.data.local.entity.InquiryEntity
 import com.example.herdmanagementmobile.data.local.entity.ListingEntity
@@ -29,6 +30,7 @@ import javax.inject.Singleton
 class ListingRepository @Inject constructor(
     private val listingDao: ListingDao,
     private val inquiryDao: InquiryDao,
+    private val syncDao: SyncDao,
     private val animalDao: AnimalDao,
     private val syncManager: SyncManager,
 ) {
@@ -94,7 +96,13 @@ class ListingRepository @Inject constructor(
         syncManager.enqueueListingVerify(id)
     }
 
+    /**
+     * Usuwa ogłoszenie lokalnie (kaskadowo jego zapytania) i kolejkuje usunięcie
+     * na serwerze. Powiązania identyfikatorów zapytań trzeba skasować ręcznie, bo
+     * `id_mapping` nie ma klucza obcego — patrz [SyncDao.deleteInquiryMappingsForListing].
+     */
     suspend fun delete(id: Long) {
+        syncDao.deleteInquiryMappingsForListing(id)
         listingDao.deleteById(id)
         syncManager.enqueueListingDelete(id)
     }

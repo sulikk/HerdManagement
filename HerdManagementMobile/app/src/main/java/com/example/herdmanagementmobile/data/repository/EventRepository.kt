@@ -6,6 +6,7 @@ import com.example.herdmanagementmobile.data.sync.SyncManager
 import com.example.herdmanagementmobile.domain.model.AnimalEvent
 import com.example.herdmanagementmobile.domain.model.ComplianceItem
 import com.example.herdmanagementmobile.domain.model.IrzStatus
+import com.example.herdmanagementmobile.domain.model.allowsRemoval
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -59,6 +60,22 @@ class EventRepository @Inject constructor(
         syncManager.enqueueEventCreate(event.copy(id = id, irzStatus = IrzStatus.PENDING))
         if (submitToIrz) submitToIrz(id)
         return id
+    }
+
+    /**
+     * Usuwa zdarzenie, które nie trafiło do rejestru (patrz [allowsRemoval]), i kolejkuje
+     * usunięcie w backendzie — inaczej pobranie zmian przyniosłoby je z powrotem.
+     *
+     * Zwraca `false`, gdy zdarzenia nie wolno usunąć. Warunek sprawdzamy tutaj, a nie
+     * tylko w interfejsie: reguła mówi o zgodności ewidencji z rejestrem, więc nie może
+     * zależeć od tego, który ekran zawołał usunięcie.
+     */
+    suspend fun delete(eventId: Long): Boolean {
+        val event = eventDao.getById(eventId) ?: return false
+        if (!event.irzStatus.allowsRemoval) return false
+        eventDao.deleteById(eventId)
+        syncManager.enqueueEventDelete(eventId)
+        return true
     }
 
     /** Zgłoszenie zdarzenia do IRZplus — wołać wyłącznie po potwierdzeniu przez użytkownika. */

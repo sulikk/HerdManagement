@@ -202,3 +202,41 @@ def test_wpis_asystenta_widoczny_w_synchronizacji(client: TestClient):
     data = _changes(client, since=checkpoint)
     assert len(data["treatments"]) == 1
     assert data["treatments"][0]["drug"] == "Penicylina prokainowa"
+
+
+def test_nagrobek_po_odzyskanym_id_nie_jest_zglaszany(client: TestClient):
+    """Nagrobek przestaje obowiązywać, gdy jego identyfikator wrócił do obiegu.
+
+    SQLite nadaje klucz główny jako ``max(id) + 1``, więc po usunięciu ostatniego
+    wiersza jego numer dostaje następny rekord. Telefon dopasowuje nagrobki po
+    ``(encja, id)`` i nie ma jak rozpoznać, że ``animal/1`` dotyczy poprzednika:
+    przy pełnej migawce zapisywał świeże zwierzę, a potem kasował je starym
+    nagrobkiem — po reinstalacji aplikacji stado wychodziło puste.
+    """
+    first = _create_animal(client)
+    assert client.delete(f"/animals/{first['id']}").status_code == 204
+
+    recreated = _create_animal(client, ear_tag="PL004512378902")
+    assert recreated["id"] == first["id"], "test ma sens tylko przy odzyskanym id"
+
+    data = _changes(client)
+    assert [a["id"] for a in data["animals"]] == [recreated["id"]]
+    assert all(
+        not (d["entity"] == "animal" and d["entity_id"] == recreated["id"])
+        for d in data["deletions"]
+    )
+
+
+def test_nagrobek_po_trwale_usunietym_rekordzie_wciaz_dociera(client: TestClient):
+    """Odsiewanie nie może zasłonić usunięcia, o którym telefon musi się dowiedzieć."""
+    first = _create_animal(client)
+    _create_animal(client, ear_tag="PL004512378902")
+    checkpoint = _changes(client)["server_time"]
+
+    assert client.delete(f"/animals/{first['id']}").status_code == 204
+
+    data = _changes(client, since=checkpoint)
+    assert any(
+        d["entity"] == "animal" and d["entity_id"] == first["id"]
+        for d in data["deletions"]
+    )

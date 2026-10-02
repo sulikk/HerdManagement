@@ -71,6 +71,14 @@ class SyncManager @Inject constructor(
         enqueue(SyncContract.Entity.EVENT, SyncContract.Operation.IRZ_SUBMIT, json.encodeToString(LocalIdPayload(eventId)))
     }
 
+    /**
+     * Usunięcie zdarzenia w backendzie. W kolejce ląduje tylko lokalne id — zdalne
+     * worker odczyta z mapy identyfikatorów tuż przed wysłaniem.
+     */
+    suspend fun enqueueEventDelete(localId: Long) {
+        enqueue(SyncContract.Entity.EVENT, SyncContract.Operation.DELETE, json.encodeToString(LocalIdPayload(localId)))
+    }
+
     suspend fun enqueueIrzResult(eventId: Long) {
         enqueue(SyncContract.Entity.EVENT, SyncContract.Operation.IRZ_RESULT, json.encodeToString(LocalIdPayload(eventId)))
     }

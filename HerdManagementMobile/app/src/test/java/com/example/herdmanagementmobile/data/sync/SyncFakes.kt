@@ -49,11 +49,20 @@ class Fakes {
 
 class FakeMarkerStore : SyncMarkerStore {
     var marker: String? = null
+    var server: String? = null
 
     override suspend fun lastPullMarker(): String? = marker
 
     override suspend fun saveLastPullMarker(marker: String) {
         this.marker = marker
+    }
+
+    /** Jak w [SyncStateRepository]: inny backend unieważnia znacznik. */
+    override suspend fun bindToServer(baseUrl: String) {
+        if (server != baseUrl) {
+            marker = null
+            server = baseUrl
+        }
     }
 }
 
@@ -163,6 +172,8 @@ class FakeTreatmentDao : TreatmentDao {
     val rows = linkedMapOf<Long, TreatmentEntity>()
     private var nextId = 1L
 
+    override suspend fun getById(id: Long): TreatmentEntity? = rows[id]
+
     override suspend fun insert(treatment: TreatmentEntity): Long {
         val id = if (treatment.id == 0L) nextId++ else treatment.id
         rows[id] = treatment.copy(id = id)
@@ -213,6 +224,8 @@ class FakeInquiryDao : InquiryDao {
     val rows = linkedMapOf<Long, InquiryEntity>()
     private var nextId = 1L
 
+    override suspend fun getById(id: Long): InquiryEntity? = rows[id]
+
     override suspend fun insert(inquiry: InquiryEntity): Long {
         val id = if (inquiry.id == 0L) nextId++ else inquiry.id
         rows[id] = inquiry.copy(id = id)
@@ -234,9 +247,25 @@ class FakeSyncDao : SyncDao {
     private val mappings = mutableMapOf<Pair<String, Long>, Long>()
     var unsent = 0
 
-    override suspend fun putMapping(mapping: IdMappingEntity) {
+    /** Ile powiązań encji jest w mapie — do sprawdzania, czy śmieci nie zostają. */
+    fun mappingCount(entity: String): Int = mappings.keys.count { it.first == entity }
+
+    // putMapping zostaje domyślną implementacją z [SyncDao] — atrapa dostarcza tylko
+    // dwie operacje składowe, żeby test sprawdzał prawdziwy niezmiennik mapy.
+    override suspend fun insertMapping(mapping: IdMappingEntity) {
         mappings[mapping.entity to mapping.localId] = mapping.remoteId
     }
+
+    override suspend fun clearRemoteId(entity: String, remoteId: Long) {
+        mappings.entries.removeAll { it.key.first == entity && it.value == remoteId }
+    }
+
+    /** Dzieci zna tylko prawdziwa baza; w teście czyścimy mapę wprost. */
+    override suspend fun deleteEventMappingsForAnimal(animalId: Long) = Unit
+    override suspend fun deleteTreatmentMappingsForAnimal(animalId: Long) = Unit
+    override suspend fun deleteListingMappingsForAnimal(animalId: Long) = Unit
+    override suspend fun deleteInquiryMappingsForAnimal(animalId: Long) = Unit
+    override suspend fun deleteInquiryMappingsForListing(listingId: Long) = Unit
 
     override suspend fun remoteIdFor(entity: String, localId: Long): Long? =
         mappings[entity to localId]
@@ -247,6 +276,11 @@ class FakeSyncDao : SyncDao {
     override suspend fun deleteMapping(entity: String, localId: Long) {
         mappings.remove(entity to localId)
     }
+
+    override suspend fun mappingsFor(entity: String): List<IdMappingEntity> =
+        mappings.entries
+            .filter { it.key.first == entity }
+            .map { IdMappingEntity(entity, it.key.second, it.value) }
 
     override suspend fun unsentCount(): Int = unsent
 

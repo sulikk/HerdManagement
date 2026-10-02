@@ -59,6 +59,7 @@ class SyncWorker @AssistedInject constructor(
     private val irzplus: IrzplusClient,
     private val syncManager: SyncManager,
     private val syncPuller: SyncPuller,
+    private val syncState: SyncStateRepository,
     private val json: Json,
 ) : CoroutineWorker(context, params) {
 
@@ -96,25 +97,34 @@ class SyncWorker @AssistedInject constructor(
      * Błąd pobierania nie może wywrócić całej synchronizacji — wypchnięte właśnie
      * zmiany są już na serwerze, a porcja do pobrania przyjdzie przy kolejnym
      * uruchomieniu (znacznik `since` przesuwa się dopiero po udanym zapisie).
+     *
+     * Wynik zapisujemy w [SyncStateRepository], bo sam log nic nie mówi hodowcy:
+     * dotąd nieudane pobranie było zupełnie niewidoczne, a licznik kolejki wysyłkowej
+     * pokazywał „Zsynchronizowano”, mimo że z serwera nie przyszło nic.
      */
     private suspend fun pullRemoteChanges() {
         try {
             when (val result = syncPuller.pull()) {
+                // Kolejka nie była pusta — to nie porażka, tylko odłożenie na później.
                 is SyncPuller.Result.Skipped -> Unit
-                is SyncPuller.Result.Applied ->
+                is SyncPuller.Result.Applied -> {
+                    syncState.recordPullSuccess()
                     if (result.total > 0) {
                         android.util.Log.i(
                             "SyncWorker",
                             "Pobrano z backendu: ${result.animals} zwierzat, " +
                                 "${result.events} zdarzen, ${result.treatments} leczen, " +
-                                "${result.deletions} usuniec",
+                                "${result.deletions} usuniec, " +
+                                "${result.reconciled} skasowanych lokalnie",
                         )
                     }
+                }
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             android.util.Log.w("SyncWorker", "Nie udalo sie pobrac zmian z backendu", e)
+            syncState.recordPullFailure(describeSyncError(e))
         }
     }
 
@@ -125,6 +135,8 @@ class SyncWorker @AssistedInject constructor(
             SyncContract.Entity.ANIMAL to SyncContract.Operation.DELETE ->
                 deleteRemote(entry, SyncContract.Entity.ANIMAL) { api.deleteAnimal(it) }
             SyncContract.Entity.EVENT to SyncContract.Operation.CREATE -> pushEvent(entry)
+            SyncContract.Entity.EVENT to SyncContract.Operation.DELETE ->
+                deleteRemote(entry, SyncContract.Entity.EVENT) { api.deleteEvent(it) }
             SyncContract.Entity.EVENT to SyncContract.Operation.IRZ_SUBMIT -> submitToIrz(entry)
             SyncContract.Entity.EVENT to SyncContract.Operation.IRZ_RESULT -> pushIrzResult(entry)
             SyncContract.Entity.TREATMENT to SyncContract.Operation.CREATE -> pushTreatment(entry)

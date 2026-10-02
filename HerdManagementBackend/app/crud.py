@@ -272,6 +272,45 @@ def _changed_since(db: Session, model: type, since: datetime | None) -> list:
     return query.order_by(model.id).all()
 
 
+# Tabela dla każdej encji z nagrobków — potrzebna, by rozpoznać nagrobek, który
+# przestał cokolwiek znaczyć (patrz ``_live_deletions``).
+_ENTITY_MODELS: dict[str, type] = {
+    ENTITY_ANIMAL: models.Animal,
+    ENTITY_EVENT: models.Event,
+    ENTITY_TREATMENT: models.Treatment,
+    ENTITY_LISTING: models.Listing,
+    ENTITY_INQUIRY: models.Inquiry,
+}
+
+
+def _live_deletions(db: Session, deletions: list) -> list:
+    """Odsiewa nagrobki po identyfikatorach, które zostały nadane na nowo.
+
+    SQLite nadaje klucz główny jako ``max(id) + 1``, więc po usunięciu wiersza jego
+    numer wraca do obiegu: nagrobek ``animal/1`` z wrzesnia i założone później
+    zwierzę o ``id = 1`` to dwa różne byty o tym samym adresie. Telefon dopasowuje
+    nagrobki po ``(encja, id)`` i nie ma jak ich rozróżnić — przy pełnej migawce
+    najpierw zapisywał świeże zwierzęta, a potem kasował je starymi nagrobkami.
+    Efekt: po reinstalacji aplikacji stado było puste, choć synchronizacja
+    raportowała sukces.
+
+    Jeśli wiersz o takim ``id`` znów istnieje, nagrobek dotyczy poprzedniego
+    właściciela numeru i nie ma go komu zgłosić — pomijamy go.
+    """
+    live_ids: dict[str, set[int]] = {}
+    result = []
+    for tombstone in deletions:
+        model = _ENTITY_MODELS.get(tombstone.entity)
+        if model is None:
+            result.append(tombstone)
+            continue
+        if tombstone.entity not in live_ids:
+            live_ids[tombstone.entity] = {row[0] for row in db.query(model.id).all()}
+        if tombstone.entity_id not in live_ids[tombstone.entity]:
+            result.append(tombstone)
+    return result
+
+
 def changes_since(db: Session, since: datetime | None) -> dict[str, list]:
     """Wszystko, co zmieniło się po ``since`` — wsad dla ``GET /sync/changes``."""
     deletions = db.query(models.Deletion)
@@ -284,5 +323,5 @@ def changes_since(db: Session, since: datetime | None) -> dict[str, list]:
         "treatments": _changed_since(db, models.Treatment, since),
         "listings": _changed_since(db, models.Listing, since),
         "inquiries": _changed_since(db, models.Inquiry, since),
-        "deletions": deletions.order_by(models.Deletion.id).all(),
+        "deletions": _live_deletions(db, deletions.order_by(models.Deletion.id).all()),
     }

@@ -270,9 +270,18 @@ def _treatment_summary(treatment: models.Treatment) -> dict[str, Any]:
 
 
 def _last_event(animal: models.Animal) -> models.Event | None:
-    if not animal.events:
+    """Ostatnie zdarzenie, które faktycznie zaszło — bez odrzuconych przez IRZplus.
+
+    Odrzucone zgłoszenie to próba, nie fakt: rejestr go nie przyjął, więc nie może
+    zmieniać obrazu stada. Bez tego filtra odrzucone zgłoszenie ubycia (np. drugie,
+    bo sztuka już została rozliczona) wyprowadzało żywą sztukę ze stanu stada.
+    Ten sam warunek stosuje aplikacja w ``HerdStatistics.isInHerd`` — asystent i
+    ekran statystyk opisują to samo stado, więc nie mogą liczyć inaczej.
+    """
+    actual = [e for e in animal.events if e.irz_status != models.IrzStatus.REJECTED]
+    if not actual:
         return None
-    return max(animal.events, key=lambda e: (e.event_date, e.id))
+    return max(actual, key=lambda e: (e.event_date, e.id))
 
 
 def _in_herd(animal: models.Animal) -> bool:

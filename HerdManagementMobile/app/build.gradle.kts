@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -5,6 +7,25 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+}
+
+/**
+ * Adres backendu zależy od sieci, w której stoi komputer z serwerem, więc nie może
+ * być wpisany na stałe w kodzie — przy każdej zmianie IP trzeba by ruszać źródła.
+ * Czytamy go z `local.properties` (klucz `herd.baseUrl`); plik jest poza repozytorium,
+ * więc adres z laptopa nie trafia do commitów. Brak klucza = 10.0.2.2, czyli host
+ * maszyny widziany z emulatora Androida.
+ */
+val herdBaseUrl: String = run {
+    val file = rootProject.file("local.properties")
+    val configured = if (file.exists()) {
+        Properties().apply { file.inputStream().use { load(it) } }.getProperty("herd.baseUrl")
+    } else {
+        null
+    }
+    val value = configured?.trim().orEmpty().ifEmpty { "http://10.0.2.2:8000/" }
+    // Retrofit wymaga adresu bazowego zakończonego ukośnikiem.
+    if (value.endsWith("/")) value else "$value/"
 }
 
 android {
@@ -20,6 +41,8 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
+
+        buildConfigField("String", "BASE_URL", "\"$herdBaseUrl\"")
     }
 
     buildTypes {

@@ -24,10 +24,15 @@ import javax.inject.Singleton
 object NetworkModule {
 
     /**
-     * Bazowy adres backendu. 10.0.2.2 to host maszyny widziany z emulatora Androida.
-     * Na fizycznym telefonie ustaw IP komputera w sieci LAN (np. http://192.168.0.10:8000/).
+     * Bazowy adres backendu — z `local.properties` (klucz `herd.baseUrl`) przez
+     * `BuildConfig`. Emulator widzi host maszyny jako 10.0.2.2; fizyczny telefon
+     * potrzebuje IP komputera w sieci LAN, a to zmienia się z każdą siecią, więc
+     * adres nie może leżeć w kodzie.
      */
-    private const val BASE_URL = "http://192.168.1.120:8000/"
+    @Provides
+    @Singleton
+    @BaseUrl
+    fun provideBaseUrl(): String = BuildConfig.BASE_URL
 
     @Provides
     @Singleton
@@ -56,10 +61,14 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideRetrofit(client: OkHttpClient, json: Json): Retrofit {
+    fun provideRetrofit(
+        client: OkHttpClient,
+        json: Json,
+        @BaseUrl baseUrl: String,
+    ): Retrofit {
         val contentType = "application/json".toMediaType()
         return Retrofit.Builder()
-            .baseUrl(BASE_URL)
+            .baseUrl(baseUrl)
             .client(client)
             .addConverterFactory(json.asConverterFactory(contentType))
             .build()

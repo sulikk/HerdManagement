@@ -7,12 +7,15 @@ import com.example.herdmanagementmobile.data.repository.EventRepository
 import com.example.herdmanagementmobile.domain.model.AnimalEvent
 import com.example.herdmanagementmobile.domain.model.ComplianceItem
 import com.example.herdmanagementmobile.domain.model.EventType
+import com.example.herdmanagementmobile.domain.validation.EventConflict
+import com.example.herdmanagementmobile.domain.validation.EventConflicts
 import com.example.herdmanagementmobile.domain.validation.HoldingNumber
 import com.example.herdmanagementmobile.ui.navigation.Route
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -28,7 +31,18 @@ data class EventFormState(
     val dateError: String? = null,
     val isSaving: Boolean = false,
     val saveError: String? = null,
+    /**
+     * Sprzeczność z historią sztuki. `null`, dopóki historia nie jest wczytana albo nic
+     * się nie kłóci. Część sprzeczności blokuje zapis — patrz [blocked].
+     */
+    val conflict: EventConflict? = null,
 ) {
+
+    /**
+     * Zapis jest niemożliwy: sztuka już ma urodzenie albo padnięcie, a te zdarzają się
+     * raz w życiu. Przycisk zapisu jest wtedy wyłączony, a powód widoczny nad nim.
+     */
+    val blocked: Boolean get() = conflict?.blocking == true
     /** Przybycie/ubycie wymaga numeru siedziby partnera (skąd/dokąd). */
     val requiresPartner: Boolean
         get() = type == EventType.ARRIVAL || type == EventType.DEPARTURE
@@ -50,7 +64,27 @@ class EventFormViewModel @Inject constructor(
     private val _state = MutableStateFlow(EventFormState())
     val state: StateFlow<EventFormState> = _state.asStateFlow()
 
-    fun onTypeChange(type: EventType) = _state.update { it.copy(type = type, partnerError = null) }
+    /** Historia sztuki — potrzebna, żeby rozpoznać zdarzenie sprzeczne z ewidencją. */
+    private var existing: List<AnimalEvent> = emptyList()
+
+    init {
+        if (animalId > 0) {
+            viewModelScope.launch {
+                eventRepository.observeForAnimal(animalId).collectLatest { events ->
+                    existing = events
+                    _state.update { it.copy(conflict = EventConflicts.detect(it.type, events)) }
+                }
+            }
+        }
+    }
+
+    fun onTypeChange(type: EventType) = _state.update {
+        it.copy(
+            type = type,
+            partnerError = null,
+            conflict = EventConflicts.detect(type, existing),
+        )
+    }
     fun onDateChange(date: LocalDate) = _state.update { it.copy(eventDate = date, dateError = null) }
     fun onNotesChange(value: String) = _state.update { it.copy(notes = value) }
     fun onPartnerHoldingChange(value: String) =
@@ -60,6 +94,10 @@ class EventFormViewModel @Inject constructor(
     fun validate(): Boolean {
         if (animalId <= 0) return false
         val s = _state.value
+        // Blokady pilnujemy także tutaj, nie tylko wyłączonym przyciskiem: historia
+        // sztuki może się zmienić w tle (pobranie zmian z serwera) między kompozycją
+        // ekranu a kliknięciem.
+        if (s.blocked) return false
         // Zdarzenie to zapis tego, co już się stało — rejestr odrzuca daty przyszłe
         // (ERR_DATA_PRZYSZLA), więc nie ma po co wysyłać takiego zgłoszenia.
         if (s.eventDate.isAfter(LocalDate.now())) {

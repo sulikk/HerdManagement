@@ -7,6 +7,7 @@ import com.example.herdmanagementmobile.domain.model.EventType
 import com.example.herdmanagementmobile.domain.model.IrzStatus
 import com.example.herdmanagementmobile.domain.model.Sex
 import com.example.herdmanagementmobile.domain.model.Treatment
+import com.example.herdmanagementmobile.domain.model.withoutRejected
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.temporal.ChronoUnit
@@ -122,6 +123,9 @@ object HerdStatistics {
         treatments: List<Treatment>,
         today: LocalDate = LocalDate.now(),
     ): HerdStats {
+        // Ruch stada i terminowość liczą się tylko ze zdarzeń faktycznych
+        // (patrz [withoutRejected]); rozkład statusów IRZ — ze wszystkich.
+        val actual = events.withoutRejected()
         val eventsByAnimal = events.groupBy { it.animalId }
         val present = animals.filter { isInHerd(eventsByAnimal[it.id].orEmpty()) }
         val presentIds = present.map { it.id }.toSet()
@@ -133,7 +137,7 @@ object HerdStatistics {
                 present.count { ageGroup(it, today) == group }
             },
             breeds = breeds(present),
-            movements = movements(events, YearMonth.from(today)),
+            movements = movements(actual, YearMonth.from(today)),
             animalsInWithdrawal = treatments
                 .filter { it.animalId in presentIds }
                 .filter { it.withdrawalUntil?.let { until -> !until.isBefore(today) } == true }
@@ -148,7 +152,7 @@ object HerdStatistics {
             },
             averageAgeMonths = averageAgeMonths(present, today),
             sexCounts = Sex.entries.associateWith { sex -> present.count { it.sex == sex } },
-            reporting = reporting(events),
+            reporting = reporting(actual),
         )
     }
 
@@ -164,6 +168,9 @@ object HerdStatistics {
      * Zgłoszenie uznajemy za terminowe, gdy trafiło do rejestru najpóźniej
      * siódmego dnia od zdarzenia. Zdarzenia jeszcze niewysłane nie wchodzą
      * do rachunku — nie są spóźnione, dopóki termin nie minie.
+     *
+     * Odrzucone odsiewa już wywołujący: mają znacznik wysłania, ale rejestr ich nie
+     * przyjął, więc policzone jako „w terminie” zawyżałyby dyscyplinę zgłoszeń.
      */
     private fun reporting(events: List<AnimalEvent>): ReportingStats {
         val submitted = events.filter { it.irzSubmittedAt != null }
@@ -174,9 +181,14 @@ object HerdStatistics {
         return ReportingStats(onTime = onTime, late = submitted.size - onTime)
     }
 
-    /** Zwierzę jest w stadzie, jeśli jego najnowsze zdarzenie nie jest ubyciem ani padnięciem. */
+    /**
+     * Zwierzę jest w stadzie, jeśli jego najnowsze **faktyczne** zdarzenie nie jest
+     * ubyciem ani padnięciem. Zgłoszenie odrzucone przez rejestr nie zmieniło niczego
+     * w IRZplus, więc nie może też zmieniać stanu stada w aplikacji.
+     */
     fun isInHerd(animalEvents: List<AnimalEvent>): Boolean {
-        val last = animalEvents.maxWithOrNull(compareBy<AnimalEvent>({ it.eventDate }, { it.id }))
+        val last = animalEvents.withoutRejected()
+            .maxWithOrNull(compareBy<AnimalEvent>({ it.eventDate }, { it.id }))
         return last == null || last.type !in CLOSING
     }
 

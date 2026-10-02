@@ -4,16 +4,20 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -30,17 +34,20 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.herdmanagementmobile.domain.model.DeadlineText
 import com.example.herdmanagementmobile.domain.model.EventType
+import com.example.herdmanagementmobile.domain.validation.EventConflict
 import com.example.herdmanagementmobile.ui.common.DateField
 import com.example.herdmanagementmobile.ui.common.SectionCard
 import com.example.herdmanagementmobile.ui.common.PastOrToday
@@ -65,6 +72,7 @@ fun EventFormScreen(
     val state by viewModel.state.collectAsState()
     var showDatePicker by remember { mutableStateOf(false) }
     var showSubmitDialog by remember { mutableStateOf(false) }
+    var showConflictDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -88,9 +96,33 @@ fun EventFormScreen(
                         )
                         Spacer(Modifier.height(8.dp))
                     }
+                    // Powód blokady musi być przy przycisku, który nie działa. Samo
+                    // ostrzeżenie w karcie rodzaju zdarzenia bywa odwinięte poza ekran,
+                    // a wyłączony przycisk bez wyjaśnienia wygląda jak awaria aplikacji.
+                    if (state.blocked) {
+                        state.conflict?.let { conflict ->
+                            Text(
+                                text = "Nie można zapisać: ${conflict.warning(state.type)}",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                        }
+                    }
                     Button(
-                        onClick = { if (viewModel.validate()) showSubmitDialog = true },
-                        enabled = !state.isSaving,
+                        // Sprzeczność z ewidencją wymaga potwierdzenia, zanim dojdzie do
+                        // pytania o zgłoszenie — inaczej hodowca kliknie „Zapisz i zgłoś”
+                        // i dopiero rejestr powie mu, że taka sztuka jest już zapisana.
+                        onClick = {
+                            if (viewModel.validate()) {
+                                if (state.conflict != null) {
+                                    showConflictDialog = true
+                                } else {
+                                    showSubmitDialog = true
+                                }
+                            }
+                        },
+                        enabled = !state.isSaving && !state.blocked,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text("Zapisz zdarzenie")
@@ -125,6 +157,16 @@ fun EventFormScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                state.conflict?.let { conflict ->
+                    ConflictWarning(
+                        text = conflict.warning(state.type) + if (conflict.blocking) {
+                            " Usuń tamto zgłoszenie na karcie zwierzęcia albo wybierz inny " +
+                                "rodzaj zdarzenia."
+                        } else {
+                            ""
+                        },
+                    )
+                }
             }
 
             SectionCard(title = "Termin") {
@@ -188,6 +230,41 @@ fun EventFormScreen(
         }
     }
 
+    // Gdy sprzeczność zniknie (historia zmieniła się w tle), okno nie ma czego
+    // dotyczyć — zamykamy je efektem, a nie zapisem stanu w trakcie kompozycji.
+    LaunchedEffect(state.conflict) {
+        if (state.conflict == null) showConflictDialog = false
+    }
+
+    state.conflict?.let { conflict ->
+        // Blokady nie da się przekliknąć, więc nie ma dla niej okna z „Dodaj mimo to”.
+        if (!showConflictDialog || conflict.blocking) return@let
+        AlertDialog(
+            onDismissRequest = { showConflictDialog = false },
+            icon = { Icon(Icons.Default.WarningAmber, contentDescription = null) },
+            title = { Text("Sprzeczne z ewidencją") },
+            text = {
+                Text(
+                    conflict.warning(state.type) +
+                        "\n\nJeśli uzupełniasz ewidencję wstecz albo wiesz, że poprzedni " +
+                        "wpis jest błędny, możesz dodać zdarzenie mimo to.",
+                )
+            },
+            // Akcją główną jest poprawa wpisu: w tych przypadkach rejestr prawie zawsze
+            // odrzuci zgłoszenie, więc wymuszenie zapisu ma być wyborem świadomym,
+            // a nie ruchem, który robi się odruchowo największym przyciskiem.
+            confirmButton = {
+                Button(onClick = { showConflictDialog = false }) { Text("Popraw") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showConflictDialog = false
+                    showSubmitDialog = true
+                }) { Text("Dodaj mimo to") }
+            },
+        )
+    }
+
     if (showSubmitDialog) {
         IrzSubmitDialog(
             title = "Zgłosić do IRZplus?",
@@ -232,6 +309,66 @@ fun EventFormScreen(
         ) {
             DatePicker(state = pickerState)
         }
+    }
+}
+
+/**
+ * Ostrzeżenie o sprzeczności z ewidencją, widoczne od razu po wyborze rodzaju
+ * zdarzenia — zanim użytkownik wypełni resztę formularza.
+ */
+@Composable
+private fun ConflictWarning(text: String) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(
+            imageVector = Icons.Default.WarningAmber,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.error,
+            modifier = Modifier.size(18.dp),
+        )
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+}
+
+/**
+ * Treść ostrzeżenia zależy też od zdarzenia, które użytkownik właśnie dodaje:
+ * ta sama historia inaczej kłóci się z ubyciem, a inaczej z padnięciem.
+ */
+private fun EventConflict.warning(type: EventType): String {
+    val date = conflictingDate.format(dayFormat)
+    return when (kind) {
+        EventConflict.Kind.ALREADY_BORN ->
+            "Ta sztuka ma już zarejestrowane urodzenie z $date. Rejestr IRZplus " +
+                "przyjmuje urodzenie jednej sztuki tylko raz — drugie zgłoszenie odrzuci."
+
+        EventConflict.Kind.ALREADY_ARRIVED ->
+            "Ta sztuka przyjechała do gospodarstwa $date — skoro przybyła z innej " +
+                "siedziby, nie urodziła się u Ciebie. Urodzenie i przybycie wykluczają się."
+
+        EventConflict.Kind.ALREADY_DEAD ->
+            "Ta sztuka jest już zarejestrowana jako padła ($date). Drugie zgłoszenie " +
+                "padnięcia rejestr odrzuci."
+
+        EventConflict.Kind.ALREADY_LEFT -> when (type) {
+            EventType.DEATH -> "Według ewidencji ta sztuka opuściła gospodarstwo $date " +
+                "— padnięcie zgłasza wtedy jej nowy posiadacz."
+
+            EventType.BIRTH -> "Ta sztuka ma w ewidencji wyjście z gospodarstwa ($date), " +
+                "a urodzenie jest zawsze pierwszym zdarzeniem w jej historii."
+
+            else -> "Według ewidencji ta sztuka opuściła gospodarstwo $date " +
+                "i nie może ubyć ponownie."
+        }
+
+        EventConflict.Kind.ALREADY_IN_HERD ->
+            "Według ewidencji ta sztuka jest już w stadzie (ostatnie zdarzenie: $date). " +
+                "Przybycie zgłasza się dla sztuki, która dopiero do Ciebie trafiła."
     }
 }
 

@@ -21,8 +21,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -35,11 +37,14 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -56,6 +61,7 @@ import com.example.herdmanagementmobile.domain.model.ComplianceItem
 import com.example.herdmanagementmobile.domain.model.DeadlineText
 import com.example.herdmanagementmobile.domain.model.EventType
 import com.example.herdmanagementmobile.domain.model.IrzStatus
+import com.example.herdmanagementmobile.domain.model.allowsRemoval
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -82,6 +88,9 @@ fun ComplianceScreen(
     val state by viewModel.state.collectAsState()
     val today = LocalDate.now()
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    // Usunięcie zgłoszenia jest nieodwracalne, więc zawsze przez potwierdzenie.
+    var pendingDelete by remember { mutableStateOf<ComplianceItem?>(null) }
+    var confirmClearRejected by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -121,11 +130,72 @@ fun ComplianceScreen(
             }
 
             if (selectedTab == 0) {
-                WaitingTab(items = state.waiting, today = today, onItemClick = onItemClick)
+                WaitingTab(
+                    items = state.waiting,
+                    today = today,
+                    onItemClick = onItemClick,
+                    onDelete = { pendingDelete = it },
+                )
             } else {
-                RejectedTab(items = state.rejected, today = today, onItemClick = onItemClick)
+                RejectedTab(
+                    items = state.rejected,
+                    today = today,
+                    onItemClick = onItemClick,
+                    onDelete = { pendingDelete = it },
+                    onClearAll = { confirmClearRejected = true },
+                )
             }
         }
+    }
+
+    pendingDelete?.let { item ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            icon = { Icon(Icons.Default.DeleteOutline, contentDescription = null) },
+            title = { Text("Usunąć zgłoszenie?") },
+            text = {
+                Text(
+                    "${item.type.label()} z ${item.eventDate.format(dayFormat)} " +
+                        "(${item.earTag}) zniknie z ewidencji i z listy terminów.\n\n" +
+                        "W rejestrze IRZplus nic się nie zmieni — to zgłoszenie nigdy nie " +
+                        "zostało tam przyjęte.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.delete(item.eventId)
+                    pendingDelete = null
+                }) { Text("Usuń") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) { Text("Anuluj") }
+            },
+        )
+    }
+
+    if (confirmClearRejected) {
+        val count = state.rejected.size
+        AlertDialog(
+            onDismissRequest = { confirmClearRejected = false },
+            icon = { Icon(Icons.Default.DeleteOutline, contentDescription = null) },
+            title = { Text("Usunąć wszystkie odrzucone?") },
+            text = {
+                Text(
+                    "Z ewidencji zniknie $count ${zgloszenia(count)} odrzucone przez IRZplus. " +
+                        "Żaden wpis w rejestrze nie zostanie zmieniony, bo żadne z nich nie " +
+                        "zostało tam przyjęte.\n\nTej operacji nie da się cofnąć.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteAllRejected()
+                    confirmClearRejected = false
+                }) { Text("Usuń wszystkie") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClearRejected = false }) { Text("Anuluj") }
+            },
+        )
     }
 }
 
@@ -154,6 +224,7 @@ private fun WaitingTab(
     items: List<ComplianceItem>,
     today: LocalDate,
     onItemClick: (Long) -> Unit,
+    onDelete: (ComplianceItem) -> Unit,
 ) {
     if (items.isEmpty()) {
         EmptyTab(
@@ -175,9 +246,9 @@ private fun WaitingTab(
         item(key = "summary") {
             Summary(overdue = overdue.size, urgent = urgent.size, onTime = onTime.size)
         }
-        urgencySection("Po terminie", overdue, today, onItemClick)
-        urgencySection("Pilne — termin w ciągu 2 dni", urgent, today, onItemClick)
-        urgencySection("W terminie", onTime, today, onItemClick)
+        urgencySection("Po terminie", overdue, today, onItemClick, onDelete)
+        urgencySection("Pilne — termin w ciągu 2 dni", urgent, today, onItemClick, onDelete)
+        urgencySection("W terminie", onTime, today, onItemClick, onDelete)
     }
 }
 
@@ -192,6 +263,8 @@ private fun RejectedTab(
     items: List<ComplianceItem>,
     today: LocalDate,
     onItemClick: (Long) -> Unit,
+    onDelete: (ComplianceItem) -> Unit,
+    onClearAll: () -> Unit,
 ) {
     if (items.isEmpty()) {
         EmptyTab(
@@ -229,12 +302,30 @@ private fun RejectedTab(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                     )
+                    Spacer(Modifier.height(8.dp))
+                    // Części odmów nie da się naprawić (np. urodzenie sztuki, która jest
+                    // w rejestrze od dawna). Zostawione na liście przysłaniają pozycje,
+                    // które faktycznie czekają na poprawę.
+                    TextButton(onClick = onClearAll) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteOutline,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Usuń wszystkie odrzucone")
+                    }
                 }
             }
         }
 
         items(items, key = { it.eventId }) { item ->
-            ComplianceRow(item = item, today = today, onClick = { onItemClick(item.animalId) })
+            ComplianceRow(
+                item = item,
+                today = today,
+                onClick = { onItemClick(item.animalId) },
+                onDelete = { onDelete(item) },
+            )
             HorizontalDivider()
         }
     }
@@ -315,6 +406,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.urgencySection(
     items: List<ComplianceItem>,
     today: LocalDate,
     onItemClick: (Long) -> Unit,
+    onDelete: (ComplianceItem) -> Unit,
 ) {
     if (items.isEmpty()) return
     stickyHeader(key = "header-$title") {
@@ -329,13 +421,23 @@ private fun androidx.compose.foundation.lazy.LazyListScope.urgencySection(
         )
     }
     items(items, key = { it.eventId }) { item ->
-        ComplianceRow(item = item, today = today, onClick = { onItemClick(item.animalId) })
+        ComplianceRow(
+            item = item,
+            today = today,
+            onClick = { onItemClick(item.animalId) },
+            onDelete = { onDelete(item) },
+        )
         HorizontalDivider()
     }
 }
 
 @Composable
-private fun ComplianceRow(item: ComplianceItem, today: LocalDate, onClick: () -> Unit) {
+private fun ComplianceRow(
+    item: ComplianceItem,
+    today: LocalDate,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+) {
     val urgency = item.urgency(today)
     val (icon, tint) = urgency.appearance()
 
@@ -396,6 +498,19 @@ private fun ComplianceRow(item: ComplianceItem, today: LocalDate, onClick: () ->
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
+                )
+            }
+        }
+
+        // Kosz tylko tam, gdzie usunięcie jest dopuszczalne — zgłoszenie przyjęte
+        // przez rejestr musi zostać w ewidencji ([allowsRemoval]).
+        if (item.irzStatus.allowsRemoval) {
+            IconButton(onClick = onDelete) {
+                Icon(
+                    imageVector = Icons.Default.DeleteOutline,
+                    contentDescription = "Usuń zgłoszenie " +
+                        "${item.type.label().lowercase()} z ${item.eventDate.format(dayFormat)}",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }

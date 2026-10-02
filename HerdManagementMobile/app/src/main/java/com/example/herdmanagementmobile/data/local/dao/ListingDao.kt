@@ -61,6 +61,9 @@ interface InquiryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(inquiry: InquiryEntity): Long
 
+    @Query("SELECT * FROM inquiries WHERE id = :id")
+    suspend fun getById(id: Long): InquiryEntity?
+
     @Query("DELETE FROM inquiries WHERE id = :id")
     suspend fun deleteById(id: Long)
 }

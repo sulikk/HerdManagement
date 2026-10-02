@@ -61,6 +61,7 @@ import com.example.herdmanagementmobile.domain.model.ComplianceItem
 import com.example.herdmanagementmobile.domain.model.DeadlineText
 import com.example.herdmanagementmobile.domain.model.EventType
 import com.example.herdmanagementmobile.domain.model.IrzStatus
+import com.example.herdmanagementmobile.domain.model.allowsRemoval
 import com.example.herdmanagementmobile.domain.model.Sex
 import com.example.herdmanagementmobile.domain.model.Treatment
 import com.example.herdmanagementmobile.domain.stats.AgeGroup
@@ -102,6 +103,7 @@ fun AnimalDetailScreen(
     val state by viewModel.state.collectAsState()
     var showDeleteDialog by remember { mutableStateOf(false) }
     var eventToSubmit by remember { mutableStateOf<AnimalEvent?>(null) }
+    var eventToDelete by remember { mutableStateOf<AnimalEvent?>(null) }
     var selectedTab by remember { mutableIntStateOf(DetailTab.DANE.ordinal) }
 
     val animal = state.animal
@@ -185,12 +187,36 @@ fun AnimalDetailScreen(
                     DetailTab.ZDARZENIA -> EventsTab(
                         events = state.events,
                         onSubmitToIrz = { eventToSubmit = it },
+                        onDelete = { eventToDelete = it },
                     )
 
                     DetailTab.LECZENIA -> TreatmentsTab(state.treatments)
                 }
             }
         }
+    }
+
+    eventToDelete?.let { event ->
+        AlertDialog(
+            onDismissRequest = { eventToDelete = null },
+            title = { Text("Usunąć zgłoszenie?") },
+            text = {
+                Text(
+                    "${event.type.label()} z dnia ${event.eventDate.format(dayFormat)} " +
+                        "zniknie z ewidencji i z listy terminów.\n\nW rejestrze IRZplus nic " +
+                        "się nie zmieni — to zgłoszenie nigdy nie zostało tam przyjęte.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteEvent(event.id)
+                    eventToDelete = null
+                }) { Text("Usuń") }
+            },
+            dismissButton = {
+                TextButton(onClick = { eventToDelete = null }) { Text("Anuluj") }
+            },
+        )
     }
 
     eventToSubmit?.let { event ->
@@ -421,7 +447,11 @@ private fun DataTab(state: AnimalDetailState, animal: Animal, onSell: () -> Unit
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun EventsTab(events: List<AnimalEvent>, onSubmitToIrz: (AnimalEvent) -> Unit) {
+private fun EventsTab(
+    events: List<AnimalEvent>,
+    onSubmitToIrz: (AnimalEvent) -> Unit,
+    onDelete: (AnimalEvent) -> Unit,
+) {
     if (events.isEmpty()) {
         EmptyTab("Brak zarejestrowanych zdarzeń.\nDodaj pierwsze przyciskiem poniżej.")
         return
@@ -435,7 +465,11 @@ private fun EventsTab(events: List<AnimalEvent>, onSubmitToIrz: (AnimalEvent) ->
         events.groupBy { it.eventDate.year }.forEach { (year, inYear) ->
             stickyHeader(key = "event-$year") { YearHeader(year) }
             items(inYear, key = { it.id }) { event ->
-                EventRow(event = event, onSubmitToIrz = { onSubmitToIrz(event) })
+                EventRow(
+                    event = event,
+                    onSubmitToIrz = { onSubmitToIrz(event) },
+                    onDelete = { onDelete(event) },
+                )
                 HorizontalDivider()
             }
         }
@@ -443,7 +477,11 @@ private fun EventsTab(events: List<AnimalEvent>, onSubmitToIrz: (AnimalEvent) ->
 }
 
 @Composable
-private fun EventRow(event: AnimalEvent, onSubmitToIrz: () -> Unit) {
+private fun EventRow(
+    event: AnimalEvent,
+    onSubmitToIrz: () -> Unit,
+    onDelete: () -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -496,6 +534,11 @@ private fun EventRow(event: AnimalEvent, onSubmitToIrz: () -> Unit) {
                 IrzStatus.PENDING -> TextButton(onClick = onSubmitToIrz) { Text("Zgłoś do IRZplus") }
                 IrzStatus.REJECTED -> TextButton(onClick = onSubmitToIrz) { Text("Zgłoś ponownie") }
                 IrzStatus.SUBMITTED, IrzStatus.CONFIRMED -> Unit
+            }
+            // Części odmów nie da się naprawić poprawką danych — wtedy jedyne wyjście
+            // to usunąć wpis. Zgłoszenie przyjęte przez rejestr zostaje ([allowsRemoval]).
+            if (event.irzStatus.allowsRemoval) {
+                TextButton(onClick = onDelete) { Text("Usuń") }
             }
         }
 

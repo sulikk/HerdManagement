@@ -1,6 +1,7 @@
 package com.example.herdmanagementmobile.data.repository
 
 import com.example.herdmanagementmobile.data.local.dao.AnimalDao
+import com.example.herdmanagementmobile.data.local.dao.SyncDao
 import com.example.herdmanagementmobile.data.local.entity.AnimalEntity
 import com.example.herdmanagementmobile.data.sync.SyncManager
 import com.example.herdmanagementmobile.domain.model.Animal
@@ -12,6 +13,7 @@ import javax.inject.Singleton
 @Singleton
 class AnimalRepository @Inject constructor(
     private val animalDao: AnimalDao,
+    private val syncDao: SyncDao,
     private val syncManager: SyncManager,
 ) {
     fun observeAnimals(): Flow<List<Animal>> =
@@ -35,8 +37,17 @@ class AnimalRepository @Inject constructor(
         syncManager.enqueueAnimalUpdate(animal)
     }
 
-    /** Usuwa zwierzę lokalnie (kaskadowo zdarzenia i leczenia) i kolejkuje usunięcie na serwerze. */
+    /**
+     * Usuwa zwierzę lokalnie (kaskadowo zdarzenia, leczenia i ogłoszenia) i kolejkuje
+     * usunięcie na serwerze.
+     *
+     * Razem z nim muszą zniknąć powiązania identyfikatorów jego zdarzeń i leczeń —
+     * kaskada Room ich nie obejmuje, bo `id_mapping` nie ma klucza obcego
+     * (patrz [SyncDao.deleteChildMappingsForAnimal]). Kolejność jest istotna:
+     * po kaskadzie nie da się już ustalić, które wiersze należały do tego zwierzęcia.
+     */
     suspend fun delete(id: Long) {
+        syncDao.deleteChildMappingsForAnimal(id)
         animalDao.deleteById(id)
         syncManager.enqueueAnimalDelete(id)
     }

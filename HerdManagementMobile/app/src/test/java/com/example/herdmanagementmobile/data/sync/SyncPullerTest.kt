@@ -1,5 +1,6 @@
 package com.example.herdmanagementmobile.data.sync
 
+import com.example.herdmanagementmobile.data.local.entity.IdMappingEntity
 import com.example.herdmanagementmobile.data.remote.dto.AnimalDto
 import com.example.herdmanagementmobile.data.remote.dto.DeletionDto
 import com.example.herdmanagementmobile.data.remote.dto.EventDto
@@ -25,6 +26,10 @@ import org.junit.Test
  */
 class SyncPullerTest {
 
+    private companion object {
+        const val SERVER = "http://192.168.0.132:8000/"
+    }
+
     private val animalDto = AnimalDto(
         id = 100L,
         earTag = "PL004512378901",
@@ -34,7 +39,11 @@ class SyncPullerTest {
         sex = "female",
     )
 
-    private fun puller(fakes: Fakes, changes: SyncChangesDto) = SyncPuller(
+    private fun puller(
+        fakes: Fakes,
+        changes: SyncChangesDto,
+        baseUrl: String = SERVER,
+    ) = SyncPuller(
         api = FakeApi(changes),
         syncDao = fakes.sync,
         animalDao = fakes.animals,
@@ -43,6 +52,7 @@ class SyncPullerTest {
         listingDao = fakes.listings,
         inquiryDao = fakes.inquiries,
         syncState = fakes.marker,
+        baseUrl = baseUrl,
     )
 
     private fun changes(
@@ -271,14 +281,173 @@ class SyncPullerTest {
     @Test
     fun `zapisany znacznik jest oddawany backendowi jako since`() = runBlocking {
         val fakes = Fakes()
+        fakes.marker.server = SERVER
         fakes.marker.marker = "2026-09-21T10:00:00Z"
         val api = FakeApi(changes())
 
         SyncPuller(
             api, fakes.sync, fakes.animals, fakes.events, fakes.treatments,
-            fakes.listings, fakes.inquiries, fakes.marker,
+            fakes.listings, fakes.inquiries, fakes.marker, SERVER,
         ).pull()
 
         assertEquals("2026-09-21T10:00:00Z", api.lastSince)
+    }
+
+    // --- Nagrobki po odzyskanych identyfikatorach -----------------------
+
+    @Test
+    fun `nagrobek po starym zwierzeciu nie kasuje nowego o tym samym id`() = runBlocking {
+        val fakes = Fakes()
+        // Realny blad: backend nadaje id usunietych wierszy od nowa, wiec pelna
+        // migawka przynosila zwierze o id 100 RAZEM z nagrobkiem animal/100 po
+        // jego poprzedniku. Telefon zapisywal zwierze, a chwile pozniej kasowal je
+        // wlasnym nagrobkiem - po reinstalacji aplikacji stado bylo puste.
+        val tombstone = DeletionDto("animal", 100L, "2026-09-01T10:00:00Z")
+
+        val result = puller(
+            fakes,
+            changes(animals = listOf(animalDto), deletions = listOf(tombstone)),
+        ).pull()
+
+        assertTrue(result is SyncPuller.Result.Applied)
+        assertEquals(1, fakes.animals.rows.size)
+        assertEquals("PL004512378901", fakes.animals.rows.values.first().earTag)
+    }
+
+    @Test
+    fun `nagrobek po ogloszeniu obecnym w tej samej porcji jest pomijany`() = runBlocking {
+        val fakes = Fakes()
+        val tombstone = DeletionDto("listing", 300L, "2026-09-01T10:00:00Z")
+
+        puller(
+            fakes,
+            changes(
+                animals = listOf(animalDto),
+                listings = listOf(listingDto),
+                deletions = listOf(tombstone),
+            ),
+        ).pull()
+
+        assertEquals(1, fakes.listings.rows.size)
+    }
+
+    // --- Uzgadnianie stanu z pelna migawka ------------------------------
+
+    @Test
+    fun `pelna migawka kasuje lokalne zwierze ktorego nie ma na serwerze`() = runBlocking {
+        val fakes = Fakes()
+        puller(fakes, changes(animals = listOf(animalDto))).pull()
+        val localId = fakes.animals.rows.keys.first()
+
+        // Serwer zna juz tylko inne zwierze - tamto zniknelo, choc nagrobek przepadl
+        // (np. baza backendu postawiona od nowa).
+        val other = animalDto.copy(id = 101L, earTag = "PL004512378902", name = "Mucha")
+        fakes.marker.marker = null
+        val result = puller(fakes, changes(animals = listOf(other))).pull()
+            as SyncPuller.Result.Applied
+
+        assertEquals(1, result.reconciled)
+        assertNull(fakes.animals.rows[localId])
+        assertEquals(1, fakes.animals.rows.size)
+        assertEquals("Mucha", fakes.animals.rows.values.first().name)
+    }
+
+    @Test
+    fun `pelna migawka nie rusza zwierzecia ktore jeszcze nie bylo na serwerze`() = runBlocking {
+        val fakes = Fakes()
+        // Wpis zrobiony w telefonie, bez mapowania na zdalne id - czeka na wyslanie.
+        val localId = fakes.animals.seed(earTag = "PL004512378903", name = "Lokalna")
+
+        val result = puller(fakes, changes(animals = listOf(animalDto))).pull()
+            as SyncPuller.Result.Applied
+
+        assertEquals(0, result.reconciled)
+        assertNotNull(fakes.animals.rows[localId])
+        assertEquals(2, fakes.animals.rows.size)
+    }
+
+    @Test
+    fun `pusta odpowiedz serwera nie kasuje lokalnych danych`() = runBlocking {
+        val fakes = Fakes()
+        puller(fakes, changes(animals = listOf(animalDto))).pull()
+        assertEquals(1, fakes.animals.rows.size)
+
+        // Backend bez danych to rownie dobrze wyczyszczona baza - to nie powod,
+        // zeby zabrac hodowcy jego ewidencje.
+        fakes.marker.marker = null
+        puller(fakes, changes()).pull()
+
+        assertEquals(1, fakes.animals.rows.size)
+    }
+
+    // --- Zmiana adresu backendu ----------------------------------------
+
+    @Test
+    fun `zmiana adresu serwera wymusza pelna migawke`() = runBlocking {
+        val fakes = Fakes()
+        puller(fakes, changes(animals = listOf(animalDto))).pull()
+        assertEquals("2026-09-21T12:00:00Z", fakes.marker.marker)
+
+        // Nowe IP komputera z serwerem: znacznik z poprzedniego adresu nic nie opisuje.
+        val api = FakeApi(changes(animals = listOf(animalDto)))
+        SyncPuller(
+            api, fakes.sync, fakes.animals, fakes.events, fakes.treatments,
+            fakes.listings, fakes.inquiries, fakes.marker, "http://192.168.0.200:8000/",
+        ).pull()
+
+        assertNull(api.lastSince)
+    }
+
+    // --- Powiazania identyfikatorow po usunietych rekordach --------------
+
+    @Test
+    fun `stare powiazanie nie wskrzesza usunietego zdarzenia`() = runBlocking {
+        // Realny blad: po usunieciu byka i dodaniu identycznego backend nadal numeruje
+        // od nowa, wiec nowe zdarzenie dostaje numer po poprzedniku. Zostawione
+        // powiazanie kazalo wpisac dane serwera pod identyfikator usunietego wiersza,
+        // a REPLACE wskrzeszal go - podpietego pod NOWE zwierze.
+        val fakes = Fakes()
+        fakes.sync.putMapping(IdMappingEntity(SyncContract.Entity.EVENT, localId = 77L, remoteId = 5L))
+        val event = EventDto(id = 5L, animalId = 100L, type = "birth", eventDate = "2026-09-18")
+
+        puller(fakes, changes(animals = listOf(animalDto), events = listOf(event))).pull()
+
+        assertEquals(1, fakes.events.rows.size)
+        assertNull("wiersz 77 byl usuniety i ma taki zostac", fakes.events.rows[77L])
+        // Mapa wskazuje teraz istniejacy wiersz i nie trzyma sladu po starym.
+        val localId = fakes.events.rows.keys.first()
+        assertEquals(localId, fakes.sync.localIdFor(SyncContract.Entity.EVENT, 5L))
+        assertEquals(1, fakes.sync.mappingCount(SyncContract.Entity.EVENT))
+    }
+
+    @Test
+    fun `jedno zdalne id nalezy do jednego rekordu lokalnego`() = runBlocking {
+        val fakes = Fakes()
+        fakes.sync.putMapping(IdMappingEntity(SyncContract.Entity.ANIMAL, localId = 1L, remoteId = 9L))
+        fakes.sync.putMapping(IdMappingEntity(SyncContract.Entity.ANIMAL, localId = 2L, remoteId = 9L))
+
+        assertEquals(1, fakes.sync.mappingCount(SyncContract.Entity.ANIMAL))
+        assertEquals(2L, fakes.sync.localIdFor(SyncContract.Entity.ANIMAL, 9L))
+        assertNull(fakes.sync.remoteIdFor(SyncContract.Entity.ANIMAL, 1L))
+    }
+
+    @Test
+    fun `stare powiazanie nie wskrzesza usunietego leczenia`() = runBlocking {
+        val fakes = Fakes()
+        fakes.sync.putMapping(
+            IdMappingEntity(SyncContract.Entity.TREATMENT, localId = 55L, remoteId = 8L),
+        )
+        val treatment = TreatmentDto(
+            id = 8L,
+            animalId = 100L,
+            drug = "Penicylina prokainowa",
+            treatmentDate = "2026-09-20",
+            withdrawalUntil = "2026-09-28",
+        )
+
+        puller(fakes, changes(animals = listOf(animalDto), treatments = listOf(treatment))).pull()
+
+        assertEquals(1, fakes.treatments.rows.size)
+        assertNull(fakes.treatments.rows[55L])
     }
 }

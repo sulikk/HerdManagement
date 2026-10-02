@@ -3,7 +3,9 @@ package com.example.herdmanagementmobile.ui.screens.animals
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.herdmanagementmobile.data.repository.AnimalRepository
+import com.example.herdmanagementmobile.data.sync.PullState
 import com.example.herdmanagementmobile.data.sync.SyncManager
+import com.example.herdmanagementmobile.data.sync.SyncStateRepository
 import com.example.herdmanagementmobile.domain.model.Animal
 import com.example.herdmanagementmobile.domain.search.AnimalSort
 import com.example.herdmanagementmobile.domain.search.AnimalSortField
@@ -18,8 +20,19 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-/** Stan kolejki synchronizacji widoczny na liście zwierząt. */
-data class SyncStatus(val pending: Int = 0, val failed: Int = 0)
+/**
+ * Stan synchronizacji widoczny na liście zwierząt — w obie strony.
+ *
+ * Sama kolejka wysyłkowa ([pending], [failed]) nie wystarczy: można mieć wszystko
+ * wysłane i jednocześnie nie mieć ani jednego rekordu z serwera. Taki telefon
+ * pokazywał „Zsynchronizowano”, choć stado na ekranie i w ewidencji było różne,
+ * więc stan pobierania ([pull]) jest tu równoprawny.
+ */
+data class SyncStatus(
+    val pending: Int = 0,
+    val failed: Int = 0,
+    val pull: PullState = PullState(),
+)
 
 /**
  * Widok stada: wynik filtrowania wraz z licznikami.
@@ -40,6 +53,7 @@ data class AnimalListState(
 class AnimalListViewModel @Inject constructor(
     repository: AnimalRepository,
     private val syncManager: SyncManager,
+    syncState: SyncStateRepository,
 ) : ViewModel() {
 
     private val query = MutableStateFlow("")
@@ -58,11 +72,12 @@ class AnimalListViewModel @Inject constructor(
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AnimalListState())
 
-    /** Operacje czekające na wysłanie i te, które się nie powiodły. */
+    /** Operacje czekające na wysłanie, te nieudane oraz wynik pobierania z serwera. */
     val syncStatus: StateFlow<SyncStatus> = combine(
         syncManager.observePendingCount(),
         syncManager.observeFailedCount(),
-    ) { pending, failed -> SyncStatus(pending, failed) }
+        syncState.observePullState(),
+    ) { pending, failed, pull -> SyncStatus(pending, failed, pull) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SyncStatus())
 
     fun onQueryChange(value: String) = query.update { value }

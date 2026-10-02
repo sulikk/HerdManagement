@@ -89,6 +89,14 @@ class AnimalDetailViewModel @Inject constructor(
         viewModelScope.launch { eventRepository.submitToIrz(eventId) }
     }
 
+    /**
+     * Usuwa zgłoszenie, które nie trafiło do rejestru — np. odrzucone urodzenie sztuki,
+     * która jest w IRZplus od dawna. Regułę pilnuje repozytorium.
+     */
+    fun deleteEvent(eventId: Long) {
+        viewModelScope.launch { eventRepository.delete(eventId) }
+    }
+
     fun delete(onDone: () -> Unit) {
         if (animalId <= 0) return
         viewModelScope.launch {

@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
@@ -27,7 +28,7 @@ data class ComplianceState(
 
 @HiltViewModel
 class ComplianceViewModel @Inject constructor(
-    repository: EventRepository,
+    private val repository: EventRepository,
 ) : ViewModel() {
 
     /** Pozycje posortowane wg terminu (najpilniejsze na górze). */
@@ -40,4 +41,19 @@ class ComplianceViewModel @Inject constructor(
             )
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ComplianceState())
+
+    /**
+     * Usuwa zgłoszenie, którego nie da się naprawić — na przykład urodzenie sztuki, która
+     * jest w rejestrze od dawna. Bez tego lista „do poprawy” rosłaby bez końca pozycjami,
+     * z którymi nie ma co zrobić, i przestałaby pokazywać to, co faktycznie wymaga uwagi.
+     */
+    fun delete(eventId: Long) {
+        viewModelScope.launch { repository.delete(eventId) }
+    }
+
+    /** Hurtowe sprzątnięcie odrzuconych — przy kilkudziesięciu sztukach pozycja po pozycji. */
+    fun deleteAllRejected() {
+        val ids = state.value.rejected.map { it.eventId }
+        viewModelScope.launch { ids.forEach { repository.delete(it) } }
+    }
 }

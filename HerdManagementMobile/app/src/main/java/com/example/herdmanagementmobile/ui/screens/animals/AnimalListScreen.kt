@@ -227,14 +227,26 @@ private fun AnimalRow(animal: Animal, onClick: () -> Unit) {
     )
 }
 
-/** Stan synchronizacji; kliknięcie = „Synchronizuj teraz” (ponawia też nieudane wpisy). */
+/**
+ * Stan synchronizacji; kliknięcie = „Synchronizuj teraz” (ponawia też nieudane wpisy).
+ *
+ * Chip mówi też o kierunku pobierania. „Zsynchronizowano” zarezerwowane jest dla
+ * sytuacji, w której kolejka jest pusta **i** dane z serwera faktycznie doszły —
+ * wcześniej ta sama etykieta pojawiała się przy telefonie, który nigdy nie dostał
+ * z backendu ani jednego rekordu, i to ona kazała wierzyć, że stado jest kompletne.
+ */
 @Composable
 private fun SyncStatusChip(status: SyncStatus, onClick: () -> Unit) {
+    val pull = status.pull
     val (label, icon) = when {
         status.failed > 0 -> "Błędy: ${status.failed}" to Icons.Default.CloudOff
         status.pending > 0 -> "Do wysłania: ${status.pending}" to Icons.Default.CloudSync
-        else -> "Zsynchronizowano" to Icons.Default.CloudDone
+        pull.error != null -> "Brak danych z serwera" to Icons.Default.CloudOff
+        pull.neverPulled -> "Nie pobrano z serwera" to Icons.Default.CloudOff
+        else -> "Zsynchronizowano ${pull.lastPullAt?.format(PULL_TIME) ?: ""}".trim() to
+            Icons.Default.CloudDone
     }
+    val alarming = status.failed > 0 || pull.error != null || pull.neverPulled
     AssistChip(
         onClick = onClick,
         label = { Text(label) },
@@ -245,7 +257,7 @@ private fun SyncStatusChip(status: SyncStatus, onClick: () -> Unit) {
                 modifier = Modifier.size(AssistChipDefaults.IconSize),
             )
         },
-        colors = if (status.failed > 0) {
+        colors = if (alarming) {
             AssistChipDefaults.assistChipColors(
                 labelColor = MaterialTheme.colorScheme.error,
                 leadingIconContentColor = MaterialTheme.colorScheme.error,
@@ -256,6 +268,9 @@ private fun SyncStatusChip(status: SyncStatus, onClick: () -> Unit) {
         modifier = Modifier.padding(end = 8.dp),
     )
 }
+
+/** Sama godzina — data ostatniego pobrania i tak jest prawie zawsze dzisiejsza. */
+private val PULL_TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
 @Composable
 private fun EmptyState(modifier: Modifier = Modifier) {

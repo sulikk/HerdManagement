@@ -297,4 +297,97 @@ class HerdStatisticsTest {
         assertEquals(0, stats.reporting.total)
         assertEquals(null, stats.reporting.onTimePercent)
     }
+
+    // --- Zdarzenia odrzucone przez IRZplus ------------------------------
+
+    @Test
+    fun `odrzucone urodzenie nie podbija ruchu stada`() {
+        // Realny blad: hodowca zglosil urodzenie tego samego byczka dwa razy.
+        // Rejestr przyjal pierwsze i odrzucil drugie (sztuka juz tam byla),
+        // a statystyki pokazywaly dwa urodzenia i dwie sztuki przybyle z jednej.
+        val a = animal(birth = today.minusDays(3), sex = Sex.MALE)
+        val events = listOf(
+            event(a.id, EventType.BIRTH, today.minusDays(3), IrzStatus.CONFIRMED),
+            event(a.id, EventType.BIRTH, today.minusDays(3), IrzStatus.REJECTED),
+        )
+
+        val stats = HerdStatistics.compute(listOf(a), events, emptyList(), today)
+
+        assertEquals(1, stats.movements.last().births)
+        assertEquals(1, stats.movementTotals.inflow)
+    }
+
+    @Test
+    fun `odrzucone ubycie nie wyprowadza sztuki ze stada`() {
+        // Grozniejszy wariant tego samego bledu: odrzucone zgloszenie ubycia
+        // zabieralo zywa sztuke ze stanu stada, choc w rejestrze nic sie nie stalo.
+        val a = animal()
+        val events = listOf(
+            event(a.id, EventType.ARRIVAL, today.minusMonths(2), IrzStatus.CONFIRMED),
+            event(a.id, EventType.DEPARTURE, today.minusDays(1), IrzStatus.REJECTED),
+        )
+
+        val stats = HerdStatistics.compute(listOf(a), events, emptyList(), today)
+
+        assertTrue(HerdStatistics.isInHerd(events))
+        assertEquals(1, stats.inHerd)
+        assertEquals(0, stats.leftHerd)
+        assertEquals(0, stats.movementTotals.outflow)
+    }
+
+    @Test
+    fun `odrzucone padniecie nie konczy zycia sztuki w ewidencji`() {
+        val a = animal()
+        val events = listOf(event(a.id, EventType.DEATH, today, IrzStatus.REJECTED))
+
+        val stats = HerdStatistics.compute(listOf(a), events, emptyList(), today)
+
+        assertEquals(1, stats.inHerd)
+        assertEquals(0, stats.movements.last().deaths)
+    }
+
+    @Test
+    fun `niezgloszone zdarzenie wciaz liczy sie do stada`() {
+        // PENDING to nie to samo co odrzucone: cielak urodzony wczoraj jest w stadzie,
+        // niezaleznie od tego, czy hodowca zdazyl juz wyslac zgloszenie.
+        val a = animal(birth = today.minusDays(1))
+        val events = listOf(event(a.id, EventType.BIRTH, today.minusDays(1), IrzStatus.PENDING))
+
+        val stats = HerdStatistics.compute(listOf(a), events, emptyList(), today)
+
+        assertEquals(1, stats.inHerd)
+        assertEquals(1, stats.movements.last().births)
+    }
+
+    @Test
+    fun `odrzucone zgloszenie nie zawyza terminowosci`() {
+        val a = animal()
+        val rejected = AnimalEvent(
+            id = 9001L,
+            animalId = a.id,
+            type = EventType.BIRTH,
+            eventDate = today.minusDays(1),
+            irzStatus = IrzStatus.REJECTED,
+            irzSubmittedAt = today.atTime(10, 0),
+        )
+        val events = listOf(submitted(a.id, today.minusDays(1), sentOn = today), rejected)
+
+        val stats = HerdStatistics.compute(listOf(a), events, emptyList(), today)
+
+        // Odrzucone ma znacznik wyslania, ale do rejestru nie trafilo.
+        assertEquals(1, stats.reporting.total)
+        assertEquals(1, stats.reporting.onTime)
+    }
+
+    @Test
+    fun `odrzucone zdarzenia nadal widac w rozkladzie statusow`() {
+        // Odsiewanie dotyczy obrazu stada, nie samego raportu o zgloszeniach:
+        // to wlasnie tu hodowca ma zobaczyc, ze cos zostalo odrzucone.
+        val a = animal()
+        val events = listOf(event(a.id, EventType.DEATH, today, IrzStatus.REJECTED))
+
+        val counts = HerdStatistics.compute(listOf(a), events, emptyList(), today).irzStatusCounts
+
+        assertEquals(1, counts[IrzStatus.REJECTED])
+    }
 }

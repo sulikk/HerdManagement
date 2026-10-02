@@ -18,6 +18,9 @@ interface TreatmentDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(treatment: TreatmentEntity): Long
 
+    @Query("SELECT * FROM treatments WHERE id = :id")
+    suspend fun getById(id: Long): TreatmentEntity?
+
     @Query("DELETE FROM treatments WHERE id = :id")
     suspend fun deleteById(id: Long)
 }

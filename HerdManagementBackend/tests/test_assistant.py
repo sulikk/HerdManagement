@@ -474,3 +474,35 @@ def test_grupy_uzytkowe_rozrozniaja_plec_powyzej_wieku_cielecego():
     assert _age_group(date(2020, 1, 1), Sex.MALE, today) == "buhaje (od 24 mies.)"
     assert _age_group(date(2020, 1, 1), Sex.FEMALE, today) == "krowy (od 24 mies.)"
     assert _age_group(None, Sex.FEMALE, today) == "bez daty urodzenia"
+
+
+def test_odrzucone_ubycie_nie_wyprowadza_sztuki_ze_stada(db):
+    """Zgłoszenie odrzucone przez rejestr nie zmienia obrazu stada.
+
+    Hodowca może zgłosić ubycie dwa razy — drugie odbije się od IRZplus, bo sztuka
+    jest już tam rozliczona. Dopóki `_last_event` liczyło także odrzucone, asystent
+    meldował, że żywa sztuka opuściła gospodarstwo, i rozchodził się ze statystykami
+    w aplikacji (`HerdStatistics.isInHerd` stosuje ten sam warunek).
+    """
+    animal = seed_animal(db)
+    event = crud.create_event(
+        db,
+        schemas.EventCreate(
+            animal_id=animal.id,
+            type=models.EventType.DEPARTURE,
+            event_date=TODAY - timedelta(days=1),
+            partner_holding_number="PL000999888",
+        ),
+    )
+    event.irz_status = models.IrzStatus.REJECTED
+    db.commit()
+
+    wynik = tools.execute_tool(db, "statystyki_stada", {}, TODAY)
+    assert wynik["liczba_w_stadzie"] == 1
+
+    dane = tools.execute_tool(
+        db, "dane_zwierzecia", {"numer_kolczyka": animal.ear_tag}, TODAY
+    )
+    assert dane["w_stadzie"] is True
+    # Samo zdarzenie zostaje w historii — hodowca musi widzieć, że próba się nie udała.
+    assert len(dane["zdarzenia"]) == 1
