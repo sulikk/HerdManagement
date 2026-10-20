@@ -18,7 +18,7 @@ PracaInzynierska/
 ├── HerdManagementMobile/   # Aplikacja Android (Kotlin + Jetpack Compose)
 ├── HerdManagementBackend/  # Backend (Python / FastAPI)
 ├── docs/                   # Dokumentacja techniczna (LaTeX)
-│   └── plan.tex            # Plan/dokumentacja projektu
+│   └── dokumentacja/       # Dokumentacja projektu (LaTeX)
 └── README.md
 ```
 
@@ -78,7 +78,7 @@ Aktualny stan względem karty pracy:
 | # | Zadanie | Status |
 |---|---------|--------|
 | 1 | Analiza prawna + dokumentacja IRZplus + user stories | w trakcie |
-| 2 | Architektura systemu + model danych | zrobione (`docs/plan.tex`) |
+| 2 | Architektura systemu + model danych | zrobione (`docs/dokumentacja/`) |
 | 3 | Lokalna baza SQLite + ekrany ewidencji + statystyki | zrobione |
 | 4 | Skaner kodów kreskowych/QR + walidacja cyfry kontrolnej | zrobione |
 | 5 | Odczyt NFC/RFID (ISO 11784/11785) | zrobione |
@@ -190,25 +190,17 @@ Testy: `tests/test_sync.py` i `tests/test_listings.py` (backend) oraz `SyncPulle
 
 ## Dokumentacja
 
-- [`docs/plan.tex`](docs/plan.tex) — plan projektu, wymagania i harmonogram (karta pracy).
-- [`docs/dokumentacja/`](docs/dokumentacja/) — dokumentacja techniczna systemu: wymagania i stan
-  ich realizacji, architektura, model danych, API, synchronizacja, integracja z IRZplus,
-  asystent LLM, moduł ogłoszeń, testy oraz instrukcja uruchomienia. Plik główny:
-  `dokumentacja.tex`, rozdziały w `rozdzialy/`. Przed złożeniem pracy należy uzupełnić
-  dane na stronie tytułowej (polecenia `\Autor`, `\Promotor`, `\Uczelnia` itd.
-  w `dokumentacja.tex`).
+[`docs/dokumentacja/dokumentacja.tex`](docs/dokumentacja/dokumentacja.tex) — dokumentacja
+projektu dla promotora: cel, stan realizacji zadań karty pracy, architektura, kluczowe
+rozwiązania, testy, uruchomienie oraz ograniczenia. Dane autora i promotora uzupełnia się
+w poleceniach `\Autor` i `\Promotor` na początku pliku.
 
-Kompilacja (pdfLaTeX; dokumentacja kompiluje się również w XeLaTeX i LuaLaTeX):
+Kompilacja (pdfLaTeX; dokument kompiluje się również w XeLaTeX i LuaLaTeX):
 
 ```powershell
-cd docs
-pdflatex plan.tex
-pdflatex plan.tex    # drugie przejście dla spisu treści
-
-cd dokumentacja
+cd docs\dokumentacja
 pdflatex dokumentacja.tex
-pdflatex dokumentacja.tex
-pdflatex dokumentacja.tex    # trzecie przejście dla spisów i odsyłaczy
+pdflatex dokumentacja.tex    # drugie przejście dla spisu treści
 ```
 
 ## Autor
