@@ -190,14 +190,25 @@ Testy: `tests/test_sync.py` i `tests/test_listings.py` (backend) oraz `SyncPulle
 
 ## Dokumentacja
 
-Szczegółowy plan projektu, architektura i harmonogram znajdują się w pliku [`docs/plan.tex`](docs/plan.tex).
+- [`docs/plan.tex`](docs/plan.tex) — plan projektu, wymagania i harmonogram (karta pracy).
+- [`docs/dokumentacja/`](docs/dokumentacja/) — dokumentacja techniczna systemu: wymagania i stan
+  ich realizacji, architektura, model danych, API, synchronizacja, integracja z IRZplus,
+  asystent LLM, moduł ogłoszeń, testy oraz instrukcja uruchomienia. Plik główny:
+  `dokumentacja.tex`, rozdziały w `rozdzialy/`. Przed złożeniem pracy należy uzupełnić
+  dane na stronie tytułowej (polecenia `\Autor`, `\Promotor`, `\Uczelnia` itd.
+  w `dokumentacja.tex`).
 
-Kompilacja:
+Kompilacja (pdfLaTeX; dokumentacja kompiluje się również w XeLaTeX i LuaLaTeX):
 
 ```powershell
 cd docs
 pdflatex plan.tex
 pdflatex plan.tex    # drugie przejście dla spisu treści
+
+cd dokumentacja
+pdflatex dokumentacja.tex
+pdflatex dokumentacja.tex
+pdflatex dokumentacja.tex    # trzecie przejście dla spisów i odsyłaczy
 ```
 
 ## Autor

@@ -4,7 +4,7 @@ Realizowane wymagania:
 
 * F12 — ogłoszenie powstaje jako szkic (``draft``) i staje się widoczne dopiero
   po wywołaniu ``POST /listings/{id}/publish``.
-* F13 — ``GET /listings/draft-for/{animal_id}`` zwraca dane karty zwierzęcia
+* F13 — ``GET /animals/{animal_id}/listing-draft`` zwraca dane karty zwierzęcia
   do wstępnego wypełnienia formularza.
 * F14 — ``POST /listings/{id}/verify`` porównuje kartę zwierzęcia z rejestrem
   IRZplus i nadaje lub odbiera odznakę „dane potwierdzone w IRZplus”.
