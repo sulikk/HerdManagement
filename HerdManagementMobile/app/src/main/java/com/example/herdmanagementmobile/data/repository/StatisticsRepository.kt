@@ -14,7 +14,7 @@ import java.time.LocalDate
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** Statystyki stada liczone lokalnie z bazy Room — działają offline. */
+/** Udostępnia statystyki stada obliczane na podstawie bazy lokalnej. */
 @Singleton
 class StatisticsRepository @Inject constructor(
     private val animalDao: AnimalDao,

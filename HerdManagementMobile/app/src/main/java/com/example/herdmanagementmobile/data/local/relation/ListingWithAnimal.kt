@@ -3,10 +3,7 @@ package com.example.herdmanagementmobile.data.local.relation
 import com.example.herdmanagementmobile.domain.model.ListingStatus
 import java.time.LocalDateTime
 
-/**
- * Projekcja ogłoszenia razem z danymi zwierzęcia — lista ogłoszeń musi pokazywać
- * kolczyk i rasę, a te leżą w tabeli `animals`.
- */
+/** Projekcja ogłoszenia wraz z danymi zwierzęcia, wykorzystywana na liście ogłoszeń. */
 data class ListingWithAnimal(
     val listingId: Long,
     val animalId: Long,

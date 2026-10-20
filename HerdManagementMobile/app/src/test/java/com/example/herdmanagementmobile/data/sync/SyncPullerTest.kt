@@ -17,12 +17,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Testy pobierania zmian z backendu.
- *
- * Sprawdzany jest scenariusz, który był realnym błędem: dane dopisane po stronie
- * serwera (np. przez asystenta LLM) nie pojawiały się w aplikacji, bo synchronizacja
- * działała tylko w jedną stronę. Poza tym — mapowanie identyfikatorów, bo lokalne id
- * z Room i id z backendu to dwie różne przestrzenie i pomylenie ich duplikuje rekordy.
+ * Testy pobierania zmian z backendu: zapis danych wprowadzonych po stronie serwera,
+ * mapowanie identyfikatorów lokalnych i zdalnych oraz uzgadnianie stanu z pełną migawką.
  */
 class SyncPullerTest {
 
@@ -99,8 +95,7 @@ class SyncPullerTest {
     @Test
     fun `zwierze dodane lokalnie jest rozpoznane po kolczyku a nie zdublowane`() = runBlocking {
         val fakes = Fakes()
-        // Zwierzę zapisane w telefonie, ale bez wpisu w mapie identyfikatorów
-        // (np. po reinstalacji aplikacji). Kolczyk jest unikalny — insert by poległ.
+        // Zwierzę zapisane lokalnie bez mapowania identyfikatora (np. po reinstalacji).
         fakes.animals.seed(earTag = animalDto.earTag, name = "Krasula")
 
         puller(fakes, changes(animals = listOf(animalDto.copy(name = "Krasula z serwera")))).pull()
@@ -137,7 +132,7 @@ class SyncPullerTest {
 
         assertEquals(1, result.deferred)
         assertEquals(0, fakes.events.rows.size)
-        // Znacznik zostaje pusty, więc następne pobranie przyniesie tę porcję ponownie.
+        // Znacznik pozostaje pusty, więc porcja zostanie pobrana ponownie.
         assertNull(fakes.marker.marker)
     }
 
@@ -185,8 +180,6 @@ class SyncPullerTest {
         assertTrue(result is SyncPuller.Result.Applied)
         assertEquals("2026-09-21T12:00:00Z", fakes.marker.marker)
     }
-
-    // --- Ogłoszenia sprzedażowe (zadanie 9) -----------------------------
 
     private val listingDto = ListingDto(
         id = 300L,
@@ -293,15 +286,11 @@ class SyncPullerTest {
         assertEquals("2026-09-21T10:00:00Z", api.lastSince)
     }
 
-    // --- Nagrobki po odzyskanych identyfikatorach -----------------------
-
     @Test
     fun `nagrobek po starym zwierzeciu nie kasuje nowego o tym samym id`() = runBlocking {
         val fakes = Fakes()
-        // Realny blad: backend nadaje id usunietych wierszy od nowa, wiec pelna
-        // migawka przynosila zwierze o id 100 RAZEM z nagrobkiem animal/100 po
-        // jego poprzedniku. Telefon zapisywal zwierze, a chwile pozniej kasowal je
-        // wlasnym nagrobkiem - po reinstalacji aplikacji stado bylo puste.
+        // Backend może ponownie nadać identyfikator usuniętego wiersza, więc migawka
+        // zawiera zwierzę o id 100 oraz znacznik usunięcia animal/100 jego poprzednika.
         val tombstone = DeletionDto("animal", 100L, "2026-09-01T10:00:00Z")
 
         val result = puller(
@@ -331,16 +320,13 @@ class SyncPullerTest {
         assertEquals(1, fakes.listings.rows.size)
     }
 
-    // --- Uzgadnianie stanu z pelna migawka ------------------------------
-
     @Test
     fun `pelna migawka kasuje lokalne zwierze ktorego nie ma na serwerze`() = runBlocking {
         val fakes = Fakes()
         puller(fakes, changes(animals = listOf(animalDto))).pull()
         val localId = fakes.animals.rows.keys.first()
 
-        // Serwer zna juz tylko inne zwierze - tamto zniknelo, choc nagrobek przepadl
-        // (np. baza backendu postawiona od nowa).
+        // Migawka nie zawiera zwierzęcia, mimo braku znacznika usunięcia.
         val other = animalDto.copy(id = 101L, earTag = "PL004512378902", name = "Mucha")
         fakes.marker.marker = null
         val result = puller(fakes, changes(animals = listOf(other))).pull()
@@ -355,7 +341,7 @@ class SyncPullerTest {
     @Test
     fun `pelna migawka nie rusza zwierzecia ktore jeszcze nie bylo na serwerze`() = runBlocking {
         val fakes = Fakes()
-        // Wpis zrobiony w telefonie, bez mapowania na zdalne id - czeka na wyslanie.
+        // Rekord lokalny bez mapowania oczekuje na wysłanie.
         val localId = fakes.animals.seed(earTag = "PL004512378903", name = "Lokalna")
 
         val result = puller(fakes, changes(animals = listOf(animalDto))).pull()
@@ -372,15 +358,12 @@ class SyncPullerTest {
         puller(fakes, changes(animals = listOf(animalDto))).pull()
         assertEquals(1, fakes.animals.rows.size)
 
-        // Backend bez danych to rownie dobrze wyczyszczona baza - to nie powod,
-        // zeby zabrac hodowcy jego ewidencje.
+        // Pusta migawka nie może powodować usunięcia danych lokalnych.
         fakes.marker.marker = null
         puller(fakes, changes()).pull()
 
         assertEquals(1, fakes.animals.rows.size)
     }
-
-    // --- Zmiana adresu backendu ----------------------------------------
 
     @Test
     fun `zmiana adresu serwera wymusza pelna migawke`() = runBlocking {
@@ -388,7 +371,7 @@ class SyncPullerTest {
         puller(fakes, changes(animals = listOf(animalDto))).pull()
         assertEquals("2026-09-21T12:00:00Z", fakes.marker.marker)
 
-        // Nowe IP komputera z serwerem: znacznik z poprzedniego adresu nic nie opisuje.
+        // Zmiana adresu serwera unieważnia znacznik pobrania.
         val api = FakeApi(changes(animals = listOf(animalDto)))
         SyncPuller(
             api, fakes.sync, fakes.animals, fakes.events, fakes.treatments,
@@ -398,14 +381,10 @@ class SyncPullerTest {
         assertNull(api.lastSince)
     }
 
-    // --- Powiazania identyfikatorow po usunietych rekordach --------------
-
     @Test
     fun `stare powiazanie nie wskrzesza usunietego zdarzenia`() = runBlocking {
-        // Realny blad: po usunieciu byka i dodaniu identycznego backend nadal numeruje
-        // od nowa, wiec nowe zdarzenie dostaje numer po poprzedniku. Zostawione
-        // powiazanie kazalo wpisac dane serwera pod identyfikator usunietego wiersza,
-        // a REPLACE wskrzeszal go - podpietego pod NOWE zwierze.
+        // Nowe zdarzenie otrzymuje identyfikator zdalny usuniętego poprzednika; nieaktualne
+        // mapowanie nie może spowodować przywrócenia usuniętego wiersza.
         val fakes = Fakes()
         fakes.sync.putMapping(IdMappingEntity(SyncContract.Entity.EVENT, localId = 77L, remoteId = 5L))
         val event = EventDto(id = 5L, animalId = 100L, type = "birth", eventDate = "2026-09-18")
@@ -414,7 +393,7 @@ class SyncPullerTest {
 
         assertEquals(1, fakes.events.rows.size)
         assertNull("wiersz 77 byl usuniety i ma taki zostac", fakes.events.rows[77L])
-        // Mapa wskazuje teraz istniejacy wiersz i nie trzyma sladu po starym.
+        // Mapowanie wskazuje istniejący wiersz, a poprzednie zostało usunięte.
         val localId = fakes.events.rows.keys.first()
         assertEquals(localId, fakes.sync.localIdFor(SyncContract.Entity.EVENT, 5L))
         assertEquals(1, fakes.sync.mappingCount(SyncContract.Entity.EVENT))

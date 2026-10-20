@@ -62,12 +62,10 @@ import com.example.herdmanagementmobile.domain.validation.EarTag
 import kotlinx.coroutines.delay
 
 /**
- * Odczyt kolczyka elektronicznego przez wbudowany moduł NFC.
+ * Odczyt kolczyka elektronicznego przez wbudowany moduł NFC (wymaganie F6).
  *
- * Ekran musi uczciwie powiedzieć, czego ta droga nie potrafi: typowe kolczyki
- * bydlęce pracują w paśmie LF 134 kHz (ISO 11784/11785), którego telefon nie
- * obsługuje. Bez tej informacji użytkownik przykłada telefon do ucha krowy
- * i wnioskuje, że aplikacja jest zepsuta.
+ * Ekran informuje o ograniczeniu sprzętowym: typowe kolczyki bydlęce pracują w paśmie
+ * LF 134 kHz (ISO 11784/11785), które nie jest obsługiwane przez moduły NFC smartfonów.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -143,8 +141,7 @@ private fun ReaderActive(
             if (detected) return@ReaderCallback
             val payload = extractEarTagPayload(tag)
             if (payload == null) {
-                // Tag był, ale nie ma w nim numeru kolczyka — bez tego sygnału
-                // użytkownik trzymałby telefon przy uchu krowy w nieskończoność.
+                // Odczytany znacznik nie zawiera numeru kolczyka.
                 activity.runOnUiThread { unreadable = true }
                 return@ReaderCallback
             }
@@ -202,10 +199,7 @@ private fun ReaderActive(
     }
 }
 
-/**
- * Pulsująca ikona — jedyny sygnał, że telefon faktycznie nasłuchuje.
- * Statyczna grafika nie odróżnia stanu „czekam na tag” od zawieszonego ekranu.
- */
+/** Pulsująca ikona sygnalizująca oczekiwanie na znacznik NFC. */
 @Composable
 private fun PulsingNfcIcon() {
     val transition = rememberInfiniteTransition(label = "nfc")
@@ -317,7 +311,7 @@ private fun extractEarTagPayload(tag: Tag): String? {
                 }
             }
         } catch (_: Exception) {
-            // ignoruj — przejdź do fallbacku UID
+            // Błąd odczytu NDEF — zastosowanie identyfikatora UID znacznika.
         } finally {
             runCatching { ndef.close() }
         }

@@ -7,9 +7,9 @@ import retrofit2.http.POST
 import retrofit2.http.Query
 
 /**
- * Klient REST mocka Portalu IRZplus. Ścieżki odwzorowują realne API ARiMR:
- * logowanie -> token Bearer, zgłoszenia pod /dokument/api/prod/..., dane
- * zwierząt pod /zwierze/api/prod/... Reużywa tego samego Retrofit (baseUrl).
+ * Interfejs REST symulatora Portalu IRZplus. Ścieżki odwzorowują API ARiMR:
+ * logowanie zwraca token Bearer, zgłoszenia obsługuje `/dokument/api/prod/...`,
+ * a dane zwierząt — `/zwierze/api/prod/...`.
  */
 interface IrzplusApiService {
 

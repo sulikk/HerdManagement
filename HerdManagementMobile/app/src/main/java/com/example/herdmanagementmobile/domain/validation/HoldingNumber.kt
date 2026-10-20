@@ -1,8 +1,8 @@
 package com.example.herdmanagementmobile.domain.validation
 
 /**
- * Walidacja identyfikatorów gospodarstwa wg konwencji ARiMR:
- * - numer siedziby stada: "PL" + 9 cyfr (numer identyfikacyjny posiadacza),
+ * Walidacja identyfikatorów gospodarstwa zgodnie z konwencją ARiMR:
+ * - numer siedziby stada: `PL` + 9 cyfr,
  * - numer producenta (EP): 9 cyfr.
  */
 object HoldingNumber {

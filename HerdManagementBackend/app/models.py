@@ -10,11 +10,11 @@ from app.database import Base
 
 
 def utcnow() -> datetime:
-    """Bieżący czas UTC — jedno źródło znaczników czasu dla całego modelu."""
+    """Zwraca bieżący czas UTC; wspólne źródło znaczników czasu modelu."""
     return datetime.now(timezone.utc)
 
 
-# Alias zachowany dla czytelności definicji kolumn poniżej.
+# Alias używany w definicjach kolumn.
 _utcnow = utcnow
 
 
@@ -44,11 +44,10 @@ class MeasurementType(str, Enum):
 
 
 class ListingStatus(str, Enum):
-    """Cykl życia ogłoszenia sprzedażowego.
+    """Status ogłoszenia sprzedażowego.
 
-    Ogłoszenie powstaje jako ``DRAFT`` i dopiero osobna, jawna decyzja użytkownika
-    przenosi je do ``PUBLISHED`` — wymaganie F12 jest więc egzekwowane przez model
-    i osobny endpoint, a nie przez samą grzeczność interfejsu.
+    Ogłoszenie powstaje jako ``DRAFT``, a przejście do ``PUBLISHED`` wymaga odrębnego
+    wywołania (wymaganie F12).
     """
 
     DRAFT = "draft"
@@ -58,12 +57,10 @@ class ListingStatus(str, Enum):
 
 
 class SyncedMixin:
-    """Znacznik ostatniej modyfikacji — podstawa synchronizacji przyrostowej (N5).
+    """Znacznik ostatniej modyfikacji wykorzystywany w synchronizacji przyrostowej (wymaganie N5).
 
-    Aplikacja mobilna pyta ``GET /sync/changes?since=...`` i dostaje wyłącznie
-    rekordy zmienione po tej dacie. Kolumna jest ``nullable``, żeby dało się ją
-    dołożyć do istniejącej bazy przez ``add_missing_columns``; dla starych wierszy
-    zapytania synchronizacji podstawiają ``created_at``.
+    Kolumna dopuszcza wartość NULL, co umożliwia jej dodanie do istniejącej bazy przez
+    ``add_missing_columns``; dla takich wierszy przyjmowana jest wartość ``created_at``.
     """
 
     updated_at: Mapped[datetime | None] = mapped_column(
@@ -98,7 +95,7 @@ class Event(SyncedMixin, Base):
     type: Mapped[EventType] = mapped_column(SAEnum(EventType))
     event_date: Mapped[date] = mapped_column(Date)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Siedziba partnera: skąd przybyło (przybycie) / dokąd ubyło (ubycie).
+    # Siedziba stada kontrahenta: pochodzenia (przybycie) lub przeznaczenia (ubycie).
     partner_holding_number: Mapped[str | None] = mapped_column(String(16), nullable=True)
     irz_status: Mapped[IrzStatus] = mapped_column(SAEnum(IrzStatus), default=IrzStatus.PENDING)
     irz_submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -120,7 +117,7 @@ class Treatment(SyncedMixin, Base):
     treatment_date: Mapped[date] = mapped_column(Date)
     withdrawal_until: Mapped[date | None] = mapped_column(Date, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Nullable, żeby `add_missing_columns` dołożyło kolumnę do istniejącej bazy.
+    # Kolumna dopuszcza NULL, aby `add_missing_columns` mogło dodać ją do istniejącej bazy.
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=True
     )
@@ -142,29 +139,24 @@ class Measurement(Base):
 
 
 class Deletion(Base):
-    """Nagrobek po usuniętym rekordzie.
+    """Znacznik usunięcia rekordu (tombstone) przekazywany w synchronizacji przyrostowej.
 
-    Usunięty wiersz znika z tabeli, więc zapytanie „co się zmieniło od daty X”
-    nie miałoby jak go zgłosić — telefon trzymałby go w Room w nieskończoność.
-    Każde usunięcie zostawia tu ślad, który synchronizacja przekazuje dalej.
-    Przy kasowaniu zwierzęcia zapisujemy też nagrobki jego zdarzeń i leczeń,
-    żeby nie polegać na kaskadzie po stronie telefonu.
+    Przy usunięciu zwierzęcia zapisywane są również znaczniki jego rekordów zależnych.
     """
 
     __tablename__ = "deletions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    entity: Mapped[str] = mapped_column(String(16), index=True)  # animal | event | treatment
+    entity: Mapped[str] = mapped_column(String(16), index=True)  # animal | event | treatment | listing | inquiry
     entity_id: Mapped[int] = mapped_column(Integer, index=True)
     deleted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
 
 
 class Listing(SyncedMixin, Base):
-    """Ogłoszenie sprzedażowe (zadanie 9).
+    """Ogłoszenie sprzedażowe.
 
-    Dane zwierzęcia nie są tu kopiowane — ogłoszenie wskazuje na kartę zwierzęcia
-    i z niej bierze kolczyk, rasę, płeć czy datę urodzenia. Dzięki temu jest jedno
-    źródło prawdy: to samo, które trafia do zgłoszeń IRZplus.
+    Dane zwierzęcia nie są kopiowane — ogłoszenie odwołuje się do karty zwierzęcia,
+    która stanowi jedyne źródło tych danych.
     """
 
     __tablename__ = "listings"
@@ -177,11 +169,10 @@ class Listing(SyncedMixin, Base):
     status: Mapped[ListingStatus] = mapped_column(SAEnum(ListingStatus), default=ListingStatus.DRAFT)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    # --- Odznaka „dane potwierdzone w IRZplus” (F14) ---
+    # Odznaka „dane potwierdzone w IRZplus” (wymaganie F14)
     irz_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     irz_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # Powód, dla którego weryfikacja nie przeszła — kupujący widzi konkret,
-    # a nie samą nieobecność odznaki.
+    # Przyczyna negatywnego wyniku weryfikacji.
     irz_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
@@ -193,10 +184,9 @@ class Listing(SyncedMixin, Base):
 
 
 class Inquiry(SyncedMixin, Base):
-    """Zapytanie kupującego o ogłoszenie (zadanie 9).
+    """Zapytanie kupującego dotyczące ogłoszenia.
 
-    Powstaje po stronie backendu — kupujący nie ma aplikacji hodowcy — więc do
-    telefonu trafia wyłącznie przez synchronizację pobierającą.
+    Tworzone po stronie backendu i przekazywane do aplikacji mobilnej przez synchronizację.
     """
 
     __tablename__ = "inquiries"

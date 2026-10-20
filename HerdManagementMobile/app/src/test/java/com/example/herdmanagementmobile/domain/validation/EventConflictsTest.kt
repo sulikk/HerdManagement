@@ -9,15 +9,11 @@ import org.junit.Test
 import java.time.LocalDate
 
 /**
- * Testy ostrzeżenia o zdarzeniu sprzecznym z ewidencją.
+ * Testy wykrywania zdarzeń sprzecznych z ewidencją.
  *
- * Pilnują przypadku, który zgłosił użytkownik: dwa razy dodane urodzenie tej samej
- * sztuki. Rejestr odrzuca drugie zgłoszenie, ale dowiadujemy się o tym dopiero po
- * wysłaniu — dopóki oba wpisy są niezgłoszone, statystyki liczą je jak dwa zdarzenia.
- *
- * Druga, równie ważna strona tych testów: ostrzeżenie nie może krzyczeć bez powodu.
- * Przybycie po ubyciu jest poprawne, a odrzucone zgłoszenie nie może blokować
- * poprawionego wpisu — inaczej hodowca nauczy się klikać „Dodaj mimo to” odruchowo.
+ * Weryfikowane jest zarówno wykrywanie sprzeczności (np. powtórne urodzenie), jak
+ * i brak fałszywych ostrzeżeń dla sekwencji poprawnych (przybycie po ubyciu,
+ * ponowne zgłoszenie po odrzuceniu).
  */
 class EventConflictsTest {
 
@@ -29,8 +25,6 @@ class EventConflictsTest {
         date: LocalDate,
         status: IrzStatus = IrzStatus.CONFIRMED,
     ) = AnimalEvent(id = nextId++, animalId = 1L, type = type, eventDate = date, irzStatus = status)
-
-    // --- Duplikaty ------------------------------------------------------
 
     @Test
     fun `drugie urodzenie tej samej sztuki jest sprzeczne`() {
@@ -44,8 +38,7 @@ class EventConflictsTest {
 
     @Test
     fun `duplikat jest wykryty takze gdy zgloszenie jeszcze nie poszlo`() {
-        // Najgorszy wariant: oba wpisy niezgłoszone, więc rejestr jeszcze nic nie wie,
-        // a statystyki liczą dwa urodzenia.
+        // Oba wpisy niezgłoszone — sprzeczność musi zostać wykryta przed wysłaniem.
         val existing = listOf(event(EventType.BIRTH, today, IrzStatus.PENDING))
 
         assertEquals(
@@ -89,7 +82,7 @@ class EventConflictsTest {
 
     @Test
     fun `padniecie sztuki ktora opuscila gospodarstwo jest sprzeczne`() {
-        // Padnięcie zgłasza posiadacz, u którego sztuka stoi — po ubyciu to już ktoś inny.
+        // Po ubyciu padnięcie zgłasza nowy posiadacz zwierzęcia.
         val existing = listOf(event(EventType.DEPARTURE, today.minusDays(4)))
 
         assertEquals(
@@ -108,8 +101,6 @@ class EventConflictsTest {
         assertEquals(today.minusMonths(6), conflict?.conflictingDate)
     }
 
-    // --- Przypadki poprawne ---------------------------------------------
-
     @Test
     fun `sztuka bez historii nie wywoluje ostrzezenia`() {
         EventType.entries.forEach { type ->
@@ -119,7 +110,7 @@ class EventConflictsTest {
 
     @Test
     fun `przybycie po ubyciu jest poprawne`() {
-        // Sztuka wraca do gospodarstwa — normalny obrót, nie pomyłka.
+        // Powrót zwierzęcia do gospodarstwa jest poprawną sekwencją.
         val existing = listOf(
             event(EventType.ARRIVAL, today.minusMonths(5)),
             event(EventType.DEPARTURE, today.minusMonths(2)),
@@ -144,8 +135,7 @@ class EventConflictsTest {
 
     @Test
     fun `odrzucone zgloszenie nie blokuje poprawionego wpisu`() {
-        // Po odrzuceniu hodowca poprawia dane i wysyła jeszcze raz — gdyby odrzucone
-        // liczyło się jak duplikat, każda poprawka wymagałaby „Dodaj mimo to”.
+        // Zgłoszenie odrzucone nie blokuje ponownego wprowadzenia poprawionego zdarzenia.
         val existing = listOf(event(EventType.BIRTH, today.minusDays(2), IrzStatus.REJECTED))
 
         assertNull(EventConflicts.detect(EventType.BIRTH, existing))
@@ -159,7 +149,7 @@ class EventConflictsTest {
         )
 
         assertNull(EventConflicts.detect(EventType.DEPARTURE, existing))
-        // ...ale przybycie wciąż jest sprzeczne, bo sztuka nigdzie nie wyjechała.
+        // Przybycie pozostaje sprzeczne, ponieważ zwierzę nie opuściło gospodarstwa.
         assertEquals(
             EventConflict.Kind.ALREADY_IN_HERD,
             EventConflicts.detect(EventType.ARRIVAL, existing)?.kind,
@@ -168,7 +158,7 @@ class EventConflictsTest {
 
     @Test
     fun `o sprzecznosci decyduje ostatnie zdarzenie a nie kolejnosc na liscie`() {
-        // Lista z bazy bywa posortowana inaczej; liczy się data, a przy równej — id.
+        // Kolejność określa data, a przy równych datach identyfikator.
         val existing = listOf(
             event(EventType.DEPARTURE, today.minusMonths(2)),
             event(EventType.ARRIVAL, today.minusMonths(1)),
@@ -181,12 +171,9 @@ class EventConflictsTest {
         )
     }
 
-    // --- Wejscia i wyjscia wykluczaja sie wzajemnie ---------------------
-
     @Test
     fun `urodzenie sztuki ktora przybyla jest sprzeczne`() {
-        // Luka zgloszona przez uzytkownika: sztuka albo urodzila sie u hodowcy, albo
-        // do niego przyjechala. Wczesniej ten przypadek nie byl w ogole wykrywany.
+        // Urodzenie i przybycie wykluczają się wzajemnie.
         val existing = listOf(event(EventType.ARRIVAL, today.minusMonths(1)))
 
         val conflict = EventConflicts.detect(EventType.BIRTH, existing)
@@ -197,7 +184,7 @@ class EventConflictsTest {
 
     @Test
     fun `urodzenie sztuki z jakakolwiek historia jest sprzeczne`() {
-        // Urodzenie jest zawsze pierwszym zdarzeniem w historii sztuki.
+        // Urodzenie musi być pierwszym zdarzeniem w historii zwierzęcia.
         val existing = listOf(
             event(EventType.ARRIVAL, today.minusMonths(4)),
             event(EventType.DEPARTURE, today.minusMonths(1)),
@@ -224,7 +211,7 @@ class EventConflictsTest {
 
     @Test
     fun `padniecie jest sprzeczne nawet gdy sztuka ma pozniejsze zdarzenia`() {
-        // Padniecie zdarza sie raz w zyciu sztuki, niezaleznie od tego, co wpisano potem.
+        // Padnięcie może wystąpić tylko raz, niezależnie od późniejszych wpisów.
         val existing = listOf(
             event(EventType.DEATH, today.minusMonths(2)),
             event(EventType.ARRIVAL, today.minusMonths(1)),
@@ -248,9 +235,7 @@ class EventConflictsTest {
 
     @Test
     fun `po ubyciu mozna zapisac powrot i kolejne ubycie`() {
-        // Niedoszla sprzedaz albo powrot z targu: `przybycie -> ubycie -> przybycie`
-        // jest poprawnym obrotem i rejestr to przyjmie. Twarda blokada drugiego
-        // przybycia uniemozliwilaby zapisanie tego w ogole.
+        // Sekwencja `przybycie -> ubycie -> przybycie` jest poprawna.
         var historia = listOf(
             event(EventType.ARRIVAL, today.minusMonths(6)),
             event(EventType.DEPARTURE, today.minusMonths(3)),
@@ -262,12 +247,9 @@ class EventConflictsTest {
         assertNull(EventConflicts.detect(EventType.DEATH, historia))
     }
 
-    // --- Waga sprzecznosci: blokada kontra ostrzezenie -------------------
-
     @Test
     fun `drugie urodzenie i drugie padniecie blokuja zapis`() {
-        // Bezwarunkowe: zadna historia ewidencji nie uzasadni drugiego urodzenia
-        // ani drugiego padniecia tej samej sztuki.
+        // Powtórne urodzenie i powtórne padnięcie są sprzecznościami bezwarunkowymi.
         val born = listOf(event(EventType.BIRTH, today.minusMonths(3)))
         val dead = listOf(event(EventType.DEATH, today.minusDays(2)))
 
@@ -277,10 +259,8 @@ class EventConflictsTest {
 
     @Test
     fun `wnioski z ewidencji tylko ostrzegaja`() {
-        // Te sprzecznosci wynikaja z tego, co aplikacja WIE o sztuce, a ewidencja bywa
-        // niepelna i uzupelniana wstecz. Gdyby blokowaly, a zdarzenie stojace na
-        // przeszkodzie bylo potwierdzone przez rejestr (czyli nieusuwalne), karta
-        // sztuki byłaby zakleszczona: ani usunac przeszkody, ani zapisac prawdy.
+        // Sprzeczności wynikające z wnioskowania na podstawie ewidencji nie blokują zapisu,
+        // ponieważ zdarzenie potwierdzone w rejestrze nie może zostać usunięte.
         val arrived = listOf(event(EventType.ARRIVAL, today.minusMonths(1)))
         val gone = listOf(event(EventType.DEPARTURE, today.minusDays(4)))
 
@@ -296,7 +276,7 @@ class EventConflictsTest {
 
     @Test
     fun `blokuja dokladnie dwa rodzaje sprzecznosci`() {
-        // Nowy rodzaj sprzecznosci ma wymagac swiadomej decyzji o jego wadze.
+        // Dodanie nowego rodzaju sprzeczności wymaga jawnego określenia jego wagi.
         assertEquals(
             listOf(EventConflict.Kind.ALREADY_BORN, EventConflict.Kind.ALREADY_DEAD),
             EventConflict.Kind.entries.filter { it.blocking },
@@ -305,8 +285,7 @@ class EventConflictsTest {
 
     @Test
     fun `odrzucone urodzenie nie blokuje poprawionego zgloszenia`() {
-        // Najwazniejsza granica blokady: po odmowie rejestru hodowca poprawia dane
-        // i wysyla jeszcze raz. Blokada w tym miejscu zamykalaby mu te droge.
+        // Zgłoszenie odrzucone nie może blokować ponownego wprowadzenia zdarzenia.
         val existing = listOf(event(EventType.BIRTH, today.minusDays(2), IrzStatus.REJECTED))
 
         assertNull(EventConflicts.detect(EventType.BIRTH, existing))

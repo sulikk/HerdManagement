@@ -5,7 +5,7 @@ import com.example.herdmanagementmobile.domain.model.ListingStatus
 import com.example.herdmanagementmobile.domain.search.POLISH_COLLATOR
 import com.example.herdmanagementmobile.domain.search.foldForSearch
 
-/** Grupy ogłoszeń widoczne jako zakładki — odwzorowują cykl życia ogłoszenia. */
+/** Grupy ogłoszeń prezentowane jako zakładki, odpowiadające etapom cyklu życia ogłoszenia. */
 enum class ListingGroup(val label: String) {
     DRAFTS("Szkice"),
     PUBLISHED("Opublikowane"),
@@ -15,8 +15,7 @@ enum class ListingGroup(val label: String) {
     fun accepts(status: ListingStatus): Boolean = when (this) {
         DRAFTS -> status == ListingStatus.DRAFT
         PUBLISHED -> status == ListingStatus.PUBLISHED
-        // Sprzedane i wycofane trafiają razem: jedne i drugie są zamknięte,
-        // a osobna zakładka na wycofane byłaby prawie zawsze pusta.
+        // Ogłoszenia sprzedane i wycofane tworzą wspólną grupę zamkniętych.
         CLOSED -> status == ListingStatus.SOLD || status == ListingStatus.WITHDRAWN
     }
 }
@@ -32,10 +31,8 @@ data class ListingSort(
     val ascending: Boolean = false,
 ) {
     /**
-     * Kliknięcie w aktywne kryterium odwraca kierunek, w inne — przełącza kryterium.
-     *
-     * Domyślny kierunek zależy od kryterium: przy dacie sensowne jest „od najnowszych”,
-     * przy cenie i kolczyku — rosnąco.
+     * Wybór aktywnego kryterium odwraca kierunek; wybór innego ustawia jego kierunek
+     * domyślny (malejąco dla daty, rosnąco dla pozostałych).
      */
     fun select(next: ListingSortField): ListingSort =
         if (next == field) {
@@ -48,16 +45,11 @@ data class ListingSort(
 data class ListingFilter(
     val query: String = "",
     val sort: ListingSort = ListingSort(),
-    /** Zawęża do ogłoszeń z odznaką „dane potwierdzone w IRZplus” (F14). */
+    /** Ogranicza listę do ogłoszeń z odznaką „dane potwierdzone w IRZplus” (wymaganie F14). */
     val verifiedOnly: Boolean = false,
 )
 
-/**
- * Filtruje i porządkuje ogłoszenia w obrębie jednej zakładki.
- *
- * Czysta funkcja — ta sama logika bez zmian działa w teście jednostkowym,
- * a przy kilkuset ogłoszeniach koszt jest pomijalny wobec zapytania do bazy.
- */
+/** Filtruje i sortuje ogłoszenia w obrębie jednej zakładki. */
 fun List<ListingWithAnimal>.applyFilter(filter: ListingFilter): List<ListingWithAnimal> =
     asSequence()
         .filter { !filter.verifiedOnly || it.irzVerified }
@@ -79,7 +71,7 @@ private fun ListingSort.comparator(): Comparator<ListingWithAnimal> {
         ListingSortField.PRICE -> compareBy { it.price }
         ListingSortField.EAR_TAG -> compareBy(POLISH_COLLATOR) { it.earTag }
     }
-    // Kolczyk rozstrzyga remisy, żeby kolejność nie zmieniała się przy odświeżeniu.
+    // Numer kolczyka zapewnia stabilną kolejność przy równych wartościach.
     return (if (ascending) byValue else byValue.reversed())
         .thenBy(POLISH_COLLATOR) { it.earTag }
 }

@@ -28,14 +28,14 @@ import javax.inject.Singleton
 
 /**
  * Dodaje operacje do kolejki synchronizacji i planuje uruchomienie [SyncWorker].
- * Repozytoria wołają enqueue* zaraz po zapisie lokalnym (offline-first).
+ * Repozytoria wywołują metody `enqueue*` bezpośrednio po zapisie lokalnym (offline-first).
  *
- * Dwa niezależne zadania WorkManagera:
+ * Wykorzystywane są dwa niezależne zadania WorkManagera:
  * - [SyncContract.UNIQUE_WORK_NAME] — natychmiastowa synchronizacja po każdej zmianie,
- * - [SyncContract.RETRY_WORK_NAME] — opóźnione ponowienie wpisów, które się nie powiodły.
- * Dzięki temu nowe zmiany nie czekają w kolejce za zadaniem odczekującym backoff.
- * Oba uruchamiają ten sam [SyncWorker]; [mutex] gwarantuje, że kolejka jest drenowana
- * tylko przez jeden worker naraz.
+ * - [SyncContract.RETRY_WORK_NAME] — opóźnione ponowienie nieudanych wpisów.
+ *
+ * Oba zadania uruchamiają [SyncWorker]; [mutex] zapewnia, że kolejka jest przetwarzana
+ * przez co najwyżej jeden worker jednocześnie.
  */
 @Singleton
 class SyncManager @Inject constructor(
@@ -61,19 +61,19 @@ class SyncManager @Inject constructor(
         enqueue(SyncContract.Entity.ANIMAL, SyncContract.Operation.DELETE, json.encodeToString(LocalIdPayload(localId)))
     }
 
-    /** Zapis zdarzenia w backendzie aplikacji (bez zgłaszania do IRZplus). */
+    /** Kolejkuje zapis zdarzenia w backendzie aplikacji, bez zgłaszania go do IRZplus. */
     suspend fun enqueueEventCreate(event: AnimalEvent) {
         enqueue(SyncContract.Entity.EVENT, SyncContract.Operation.CREATE, json.encodeToString(event.toDto()))
     }
 
-    /** Zgłoszenie zdarzenia do IRZplus — wołać wyłącznie po jawnym potwierdzeniu użytkownika. */
+    /** Kolejkuje zgłoszenie zdarzenia do IRZplus; wywoływane wyłącznie po potwierdzeniu użytkownika (wymaganie F12). */
     suspend fun enqueueIrzSubmit(eventId: Long) {
         enqueue(SyncContract.Entity.EVENT, SyncContract.Operation.IRZ_SUBMIT, json.encodeToString(LocalIdPayload(eventId)))
     }
 
     /**
-     * Usunięcie zdarzenia w backendzie. W kolejce ląduje tylko lokalne id — zdalne
-     * worker odczyta z mapy identyfikatorów tuż przed wysłaniem.
+     * Kolejkuje usunięcie zdarzenia. Wpis zawiera wyłącznie identyfikator lokalny;
+     * identyfikator zdalny jest ustalany z mapy identyfikatorów w chwili wysyłki.
      */
     suspend fun enqueueEventDelete(localId: Long) {
         enqueue(SyncContract.Entity.EVENT, SyncContract.Operation.DELETE, json.encodeToString(LocalIdPayload(localId)))
@@ -91,11 +91,8 @@ class SyncManager @Inject constructor(
         enqueue(SyncContract.Entity.TREATMENT, SyncContract.Operation.DELETE, json.encodeToString(LocalIdPayload(localId)))
     }
 
-    // --- Ogłoszenia sprzedażowe (zadanie 9) ---------------------------
-
-    // Wszystkie operacje na ogłoszeniu niosą wyłącznie lokalne id — aktualną treść
-    // worker czyta z Room tuż przed wysłaniem, więc kilka edycji z rzędu nie wysyła
-    // nieaktualnych wersji.
+    // Operacje na ogłoszeniach przenoszą wyłącznie identyfikator lokalny; aktualna treść
+    // jest odczytywana z bazy w chwili wysyłki.
     suspend fun enqueueListingCreate(listing: Listing) {
         enqueueListingAction(SyncContract.Operation.CREATE, listing.id)
     }
@@ -104,7 +101,7 @@ class SyncManager @Inject constructor(
         enqueueListingAction(SyncContract.Operation.UPDATE, listing.id)
     }
 
-    /** Publikacja ogłoszenia — wołać wyłącznie po jawnym potwierdzeniu użytkownika (F12). */
+    /** Kolejkuje publikację ogłoszenia; wywoływane wyłącznie po potwierdzeniu użytkownika (wymaganie F12). */
     suspend fun enqueueListingPublish(localId: Long) {
         enqueueListingAction(SyncContract.Operation.PUBLISH, localId)
     }
@@ -117,7 +114,7 @@ class SyncManager @Inject constructor(
         enqueueListingAction(SyncContract.Operation.MARK_SOLD, localId)
     }
 
-    /** Weryfikacja wobec rejestru IRZplus — odznaka wróci synchronizacją (F14). */
+    /** Kolejkuje weryfikację ogłoszenia w rejestrze IRZplus (wymaganie F14). */
     suspend fun enqueueListingVerify(localId: Long) {
         enqueueListingAction(SyncContract.Operation.VERIFY, localId)
     }
@@ -130,7 +127,7 @@ class SyncManager @Inject constructor(
         enqueue(SyncContract.Entity.LISTING, operation, json.encodeToString(LocalIdPayload(localId)))
     }
 
-    /** Tryb manualnej synchronizacji: ponawia nieudane wpisy i uruchamia sync od razu. */
+    /** Ręcznie wyzwala synchronizację, przywracając nieudane wpisy do kolejki. */
     suspend fun syncNow() {
         syncDao.resetFailed(LocalDateTime.now().toString())
         scheduleSync()
@@ -152,8 +149,8 @@ class SyncManager @Inject constructor(
     }
 
     /**
-     * Uruchamia synchronizację przy dostępnej sieci. APPEND_OR_REPLACE: jeśli worker
-     * właśnie pracuje, nowe uruchomienie wykona się zaraz po nim (bez utraty zmian).
+     * Planuje synchronizację przy dostępnej sieci. Polityka APPEND_OR_REPLACE sprawia,
+     * że uruchomienie zlecone w trakcie pracy workera zostanie wykonane po jej zakończeniu.
      */
     fun scheduleSync() {
         val request = OneTimeWorkRequestBuilder<SyncWorker>()
@@ -167,11 +164,9 @@ class SyncManager @Inject constructor(
     }
 
     /**
-     * Cykliczne odpytywanie backendu o zmiany (co [SyncContract.PERIODIC_MINUTES] min).
-     *
-     * Same zmiany lokalne nie wystarczą do uruchomienia synchronizacji: wpis dodany
-     * przez asystenta LLM albo poprawka zrobiona w backendzie powstają poza telefonem
-     * i nic by ich nie zaciągnęło. KEEP — ponowne wywołanie nie resetuje odliczania.
+     * Planuje cykliczne pobieranie zmian co [SyncContract.PERIODIC_MINUTES] minut, co
+     * pozwala odebrać zmiany wprowadzone poza urządzeniem. Polityka KEEP zapobiega
+     * resetowaniu harmonogramu przy ponownym wywołaniu.
      */
     fun schedulePeriodicSync() {
         val request = PeriodicWorkRequestBuilder<SyncWorker>(
@@ -186,7 +181,7 @@ class SyncManager @Inject constructor(
         )
     }
 
-    /** Planuje ponowienie za [delay]; kolejne wywołanie zastępuje poprzednie planowanie. */
+    /** Planuje ponowienie po czasie [delay]; kolejne wywołanie zastępuje wcześniejszy plan. */
     fun scheduleRetry(delay: Duration) {
         val request = OneTimeWorkRequestBuilder<SyncWorker>()
             .setConstraints(networkConstraint())

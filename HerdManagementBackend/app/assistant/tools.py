@@ -1,13 +1,12 @@
-"""Narzędzia asystenta LLM — warstwa między modelem a bazą gospodarstwa.
+"""Narzędzia asystenta LLM stanowiące warstwę pośrednią między modelem a bazą danych.
 
 Narzędzia dzielą się na dwie grupy:
 
-* **odczytowe** (``READ_TOOLS``) — wykonywane natychmiast, nie zmieniają danych,
-* **zapisujące** (``WRITE_TOOLS``) — wykonywane dopiero po jawnym potwierdzeniu
-  przez użytkownika (polityka „agent proponuje — użytkownik zatwierdza”).
+* odczytowe (``READ_TOOLS``) — wykonywane natychmiast, nie modyfikują danych,
+* zapisujące (``WRITE_TOOLS``) — wykonywane wyłącznie po potwierdzeniu przez użytkownika.
 
-Nazwy narzędzi i parametrów są po polsku, bo w tym języku prowadzona jest rozmowa
-— model trafniej dobiera argumenty, gdy słownictwo zgadza się z domeną użytkownika.
+Nazwy narzędzi i parametrów są w języku polskim, zgodnie z językiem rozmowy,
+co poprawia dobór argumentów przez model.
 """
 import re
 from datetime import date, datetime, timedelta
@@ -47,8 +46,6 @@ IRZ_LABEL = {
 class ToolError(Exception):
     """Błąd wykonania narzędzia zwracany modelowi jako ``tool_result`` z ``is_error``."""
 
-
-# --- Definicje narzędzi (schematy dla modelu) ---------------------------
 
 _EAR_TAG_FIELD = {
     "type": "string",
@@ -198,8 +195,6 @@ READ_TOOLS = {t["name"] for t in READ_TOOL_DEFINITIONS}
 WRITE_TOOLS = {t["name"] for t in WRITE_TOOL_DEFINITIONS}
 
 
-# --- Pomocnicze ---------------------------------------------------------
-
 def _ear_tag(value: Any, field: str = "numer_kolczyka") -> str:
     tag = str(value or "").strip().upper()
     if not EAR_TAG_PATTERN.fullmatch(tag):
@@ -270,13 +265,9 @@ def _treatment_summary(treatment: models.Treatment) -> dict[str, Any]:
 
 
 def _last_event(animal: models.Animal) -> models.Event | None:
-    """Ostatnie zdarzenie, które faktycznie zaszło — bez odrzuconych przez IRZplus.
+    """Zwraca ostatnie zdarzenie zwierzęcia z pominięciem zgłoszeń odrzuconych przez IRZplus.
 
-    Odrzucone zgłoszenie to próba, nie fakt: rejestr go nie przyjął, więc nie może
-    zmieniać obrazu stada. Bez tego filtra odrzucone zgłoszenie ubycia (np. drugie,
-    bo sztuka już została rozliczona) wyprowadzało żywą sztukę ze stanu stada.
-    Ten sam warunek stosuje aplikacja w ``HerdStatistics.isInHerd`` — asystent i
-    ekran statystyk opisują to samo stado, więc nie mogą liczyć inaczej.
+    Warunek jest zgodny z ``HerdStatistics.isInHerd`` w aplikacji mobilnej.
     """
     actual = [e for e in animal.events if e.irz_status != models.IrzStatus.REJECTED]
     if not actual:
@@ -285,17 +276,15 @@ def _last_event(animal: models.Animal) -> models.Event | None:
 
 
 def _in_herd(animal: models.Animal) -> bool:
-    """Sztuka jest w stadzie, dopóki ostatnim zdarzeniem nie jest ubycie lub padnięcie."""
+    """Określa, czy zwierzę jest w stadzie (ostatnie zdarzenie nie jest ubyciem ani padnięciem)."""
     last = _last_event(animal)
     return last is None or last.type not in (models.EventType.DEPARTURE, models.EventType.DEATH)
 
 
 def _age_group(birth_date: date | None, sex: models.Sex, today: date) -> str:
-    """Grupa użytkowa sztuki — ten sam podział co na ekranie statystyk.
+    """Zwraca grupę wiekowo-płciową zwierzęcia, zgodną z podziałem w statystykach aplikacji.
 
-    Powyżej wieku cielęcego o kategorii decyduje płeć: roczny samiec to byczek,
-    a nie bezpłciowa „młodzież”. Rozjazd między asystentem a statystykami
-    w aplikacji byłby widoczny od razu — obie liczby opisują to samo stado.
+    Powyżej wieku cielęcego kategorię użytkową określa płeć.
     """
     if birth_date is None:
         return "bez daty urodzenia"
@@ -314,8 +303,6 @@ def _age_group(birth_date: date | None, sex: models.Sex, today: date) -> str:
         return "buhaje (od 24 mies.)" if adult else "byczki (6-24 mies.)"
     return "płeć nieokreślona"
 
-
-# --- Wykonanie narzędzi odczytowych -------------------------------------
 
 def _lista_zwierzat(db: Session, params: dict[str, Any], today: date) -> dict[str, Any]:
     limit = params.get("limit") or 50
@@ -426,8 +413,6 @@ def _aktywne_karencje(db: Session, params: dict[str, Any], today: date) -> dict[
     ]
     return {"liczba": len(pozycje), "karencje": pozycje}
 
-
-# --- Wykonanie narzędzi zapisujących ------------------------------------
 
 def _dodaj_zwierze(db: Session, params: dict[str, Any], today: date) -> dict[str, Any]:
     ear_tag = _ear_tag(params.get("numer_kolczyka"))
@@ -542,17 +527,15 @@ _EXECUTORS = {
 def execute_tool(
     db: Session, name: str, params: dict[str, Any], today: date | None = None
 ) -> dict[str, Any]:
-    """Wykonuje narzędzie i zwraca słownik z wynikiem. Błędy sygnalizuje ``ToolError``."""
+    """Wykonuje narzędzie i zwraca słownik z wynikiem; błędy sygnalizuje wyjątkiem ``ToolError``."""
     executor = _EXECUTORS.get(name)
     if executor is None:
         raise ToolError(f"Nieznane narzędzie: {name}.")
     return executor(db, params or {}, today or datetime.now().date())
 
 
-# --- Opis akcji dla ekranu potwierdzenia --------------------------------
-
 def describe_action(name: str, params: dict[str, Any]) -> str:
-    """Zdanie po polsku pokazywane użytkownikowi w oknie potwierdzenia."""
+    """Zwraca opis akcji prezentowany użytkownikowi w oknie potwierdzenia."""
     params = params or {}
     tag = params.get("numer_kolczyka", "?")
     if name == "dodaj_zwierze":

@@ -10,12 +10,12 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Klient IRZplus: zarządza logowaniem i tokenem, mapuje zdarzenie domenowe na
- * dyspozycję zgłoszenia i kieruje je do właściwej operacji (urodzenie / przybycie
- * / ubycie / padnięcie). Token jest buforowany; po 401 następuje ponowne logowanie.
+ * Klient IRZplus. Zarządza uwierzytelnieniem, mapuje zdarzenie domenowe na dyspozycję
+ * zgłoszenia i kieruje je do odpowiedniej operacji (urodzenie, przybycie, ubycie,
+ * padnięcie). Token jest buforowany i odświeżany po odpowiedzi 401.
  *
- * Poświadczenia są tu stałymi demonstracyjnymi — docelowo powinny pochodzić
- * z bezpiecznego magazynu (DataStore / EncryptedSharedPreferences).
+ * Hasło jest stałą demonstracyjną; w środowisku produkcyjnym powinno pochodzić
+ * z bezpiecznego magazynu (np. EncryptedSharedPreferences).
  */
 @Singleton
 class IrzplusClient @Inject constructor(
@@ -27,7 +27,7 @@ class IrzplusClient @Inject constructor(
 
     private suspend fun ensureToken(): String {
         token?.let { return it }
-        // Login = numer producenta z ustawień gospodarstwa (tak jak w realnym IRZplus).
+        // Loginem jest numer producenta, zgodnie z konwencją IRZplus.
         val producent = farmSettings.current().producerNumber
         val fresh = api.logowanie(LoginRequest(login = producent, haslo = PASSWORD)).token
         token = fresh
@@ -37,7 +37,7 @@ class IrzplusClient @Inject constructor(
     suspend fun pobierzZwierzeta(): List<ZwierzeIndywidualneDTO> =
         withBearer { auth -> api.pobierzZwierzeta(auth) }
 
-    /** Zgłasza zdarzenie do IRZplus i zwraca odpowiedź (numer dokumentu lub błędy). */
+    /** Zgłasza zdarzenie do IRZplus i zwraca odpowiedź z numerem dokumentu lub błędami walidacji. */
     suspend fun zglosZdarzenie(event: AnimalEvent, animal: Animal): ZlozenieDyspozycjiResponse {
         val settings = farmSettings.current()
         val dyspozycja = buildDyspozycja(event, animal, settings.producerNumber, settings.holdingNumber)
@@ -51,7 +51,7 @@ class IrzplusClient @Inject constructor(
         }
     }
 
-    /** Wykonuje wywołanie z tokenem; po 401 odświeża token i ponawia raz. */
+    /** Wykonuje wywołanie z tokenem; po odpowiedzi 401 odświeża token i jednokrotnie ponawia. */
     private suspend fun <T> withBearer(block: suspend (String) -> T): T {
         return try {
             block("Bearer ${ensureToken()}")
@@ -95,7 +95,7 @@ class IrzplusClient @Inject constructor(
     }
 
     companion object {
-        // Hasło do IRZplus — w mocku dowolne niepuste. Docelowo z bezpiecznego magazynu.
+        // Symulator akceptuje dowolne niepuste hasło.
         private const val PASSWORD = "demo"
     }
 }

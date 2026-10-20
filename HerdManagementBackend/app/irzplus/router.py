@@ -1,9 +1,9 @@
-"""Mock API Portalu IRZplus (ARiMR) — moduł symulujący system państwowy.
+"""Symulator API Portalu IRZplus (ARiMR).
 
-Odwzorowuje konwencje realnego API: logowanie -> token Bearer, zgłoszenia jako
-dyspozycje z pozycjami, odpowiedź z numerem dokumentu i listą błędów walidacji.
-Operacje wymagane przez kartę pracy: pobierz listę zwierząt + zgłoś
-urodzenie / przybycie / ubycie / padnięcie.
+Odwzorowuje konwencje API: logowanie zwracające token Bearer, zgłoszenia w postaci
+dyspozycji z pozycjami oraz odpowiedź z numerem dokumentu i listą błędów walidacji.
+Udostępnia pobieranie listy zwierząt oraz zgłoszenia urodzenia, przybycia, ubycia
+i padnięcia.
 """
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 
@@ -31,7 +31,7 @@ router = APIRouter(prefix="/irzplus", tags=["irzplus-mock"])
 
 
 def wymagany_token(authorization: str | None = Header(default=None)) -> str:
-    """Zależność autoryzacyjna — sprawdza nagłówek Authorization: Bearer <token>."""
+    """Zależność autoryzacyjna weryfikująca nagłówek ``Authorization: Bearer <token>``."""
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -62,7 +62,7 @@ def logowanie(body: LoginRequest):
 
 @router.get("/zwierze/api/prod/zwierzetaProducenta", response_model=list[ZwierzeIndywidualneDTO])
 def pobierz_zwierzeta_producenta(_producent: str = Depends(wymagany_token)):
-    """Pobierz listę zwierząt znanych systemowi IRZ."""
+    """Zwraca listę zwierząt zarejestrowanych w systemie IRZ."""
     return store.list_animals()
 
 
@@ -101,7 +101,7 @@ def _przyjmij(
     validator: Callable[[IrzplusStore, PozycjaZgloszeniaDTO], list[BladWalidacjiDTO]],
     po_przyjeciu: Callable[[PozycjaZgloszeniaDTO], None] | None = None,
 ) -> ZlozenieDyspozycjiResponse:
-    """Wspólna obsługa zgłoszenia: walidacja per typ, akcja po przyjęciu, numer dokumentu."""
+    """Obsługuje zgłoszenie: walidacja dla danego typu, akcja po przyjęciu i nadanie numeru dokumentu."""
     if not dyspozycja.zgloszenie.pozycje:
         return ZlozenieDyspozycjiResponse(
             komunikat="Zgłoszenie odrzucone — brak pozycji.",

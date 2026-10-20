@@ -31,7 +31,7 @@ class HerdStatisticsTest {
         status: IrzStatus = IrzStatus.PENDING,
     ) = AnimalEvent(id = nextId++, animalId = animalId, type = type, eventDate = date, irzStatus = status)
 
-    /** Zdarzenie wysłane do rejestru w konkretnym dniu — do testów terminowości. */
+    /** Tworzy zdarzenie wysłane do rejestru w podanym dniu. */
     private fun submitted(
         animalId: Long,
         date: LocalDate,
@@ -109,7 +109,7 @@ class HerdStatisticsTest {
         val groups = HerdStatistics.compute(animals, emptyList(), emptyList(), today).ageGroups
 
         assertEquals(1, groups[AgeGroup.CALVES])
-        // Sztuki 6–24 mies. rozdzielone wg płci: jałówka i byczek osobno.
+        // Zwierzęta w wieku 6–24 miesięcy są klasyfikowane według płci.
         assertEquals(1, groups[AgeGroup.HEIFERS])
         assertEquals(1, groups[AgeGroup.YOUNG_BULLS])
         assertEquals(1, groups[AgeGroup.COWS])
@@ -120,8 +120,7 @@ class HerdStatisticsTest {
 
     @Test
     fun `roczny samiec jest byczkiem a nie bezplciowa mlodzieza`() {
-        // Zgłoszone przez użytkownika: byk po pierwszym roku wpadał do wspólnej
-        // „młodzieży” i znikał z obrazu stada jako samiec.
+        // Samiec powyżej wieku cielęcego należy do grupy byczków.
         val byczek = animal(birth = today.minusMonths(13), sex = Sex.MALE)
         val jalowka = animal(birth = today.minusMonths(13), sex = Sex.FEMALE)
 
@@ -230,8 +229,6 @@ class HerdStatisticsTest {
         assertEquals(0, counts[IrzStatus.SUBMITTED])
     }
 
-    // --- Średni wiek ----------------------------------------------------
-
     @Test
     fun `sredni wiek liczy tylko sztuki w stadzie`() {
         val a = animal(birth = today.minusMonths(10))
@@ -248,8 +245,6 @@ class HerdStatisticsTest {
 
         assertEquals(null, stats.averageAgeMonths)
     }
-
-    // --- Terminowość zgłoszeń -------------------------------------------
 
     @Test
     fun `zgloszenie w siodmym dniu jest jeszcze terminowe`() {
@@ -277,7 +272,7 @@ class HerdStatisticsTest {
 
     @Test
     fun `niewyslane zdarzenia nie wchodza do terminowosci`() {
-        // Zdarzenie bez znacznika wysyłki nie jest spóźnione — po prostu czeka.
+        // Zdarzenie niewysłane nie jest uwzględniane w terminowości.
         val a = animal()
         val events = listOf(
             event(a.id, EventType.BIRTH, today.minusDays(30)),
@@ -298,13 +293,10 @@ class HerdStatisticsTest {
         assertEquals(null, stats.reporting.onTimePercent)
     }
 
-    // --- Zdarzenia odrzucone przez IRZplus ------------------------------
-
     @Test
     fun `odrzucone urodzenie nie podbija ruchu stada`() {
-        // Realny blad: hodowca zglosil urodzenie tego samego byczka dwa razy.
-        // Rejestr przyjal pierwsze i odrzucil drugie (sztuka juz tam byla),
-        // a statystyki pokazywaly dwa urodzenia i dwie sztuki przybyle z jednej.
+        // Drugie zgłoszenie urodzenia tego samego zwierzęcia zostało odrzucone
+        // i nie może być uwzględnione w statystykach.
         val a = animal(birth = today.minusDays(3), sex = Sex.MALE)
         val events = listOf(
             event(a.id, EventType.BIRTH, today.minusDays(3), IrzStatus.CONFIRMED),
@@ -319,8 +311,7 @@ class HerdStatisticsTest {
 
     @Test
     fun `odrzucone ubycie nie wyprowadza sztuki ze stada`() {
-        // Grozniejszy wariant tego samego bledu: odrzucone zgloszenie ubycia
-        // zabieralo zywa sztuke ze stanu stada, choc w rejestrze nic sie nie stalo.
+        // Odrzucone zgłoszenie ubycia nie zmienia stanu stada.
         val a = animal()
         val events = listOf(
             event(a.id, EventType.ARRIVAL, today.minusMonths(2), IrzStatus.CONFIRMED),
@@ -348,8 +339,7 @@ class HerdStatisticsTest {
 
     @Test
     fun `niezgloszone zdarzenie wciaz liczy sie do stada`() {
-        // PENDING to nie to samo co odrzucone: cielak urodzony wczoraj jest w stadzie,
-        // niezaleznie od tego, czy hodowca zdazyl juz wyslac zgloszenie.
+        // Zdarzenia niezgłoszone (PENDING) są uwzględniane w stanie stada.
         val a = animal(birth = today.minusDays(1))
         val events = listOf(event(a.id, EventType.BIRTH, today.minusDays(1), IrzStatus.PENDING))
 
@@ -374,15 +364,14 @@ class HerdStatisticsTest {
 
         val stats = HerdStatistics.compute(listOf(a), events, emptyList(), today)
 
-        // Odrzucone ma znacznik wyslania, ale do rejestru nie trafilo.
+        // Zgłoszenie odrzucone posiada znacznik wysłania, lecz nie zostało zarejestrowane.
         assertEquals(1, stats.reporting.total)
         assertEquals(1, stats.reporting.onTime)
     }
 
     @Test
     fun `odrzucone zdarzenia nadal widac w rozkladzie statusow`() {
-        // Odsiewanie dotyczy obrazu stada, nie samego raportu o zgloszeniach:
-        // to wlasnie tu hodowca ma zobaczyc, ze cos zostalo odrzucone.
+        // Rozkład statusów IRZ obejmuje również zgłoszenia odrzucone.
         val a = animal()
         val events = listOf(event(a.id, EventType.DEATH, today, IrzStatus.REJECTED))
 

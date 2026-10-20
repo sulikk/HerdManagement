@@ -29,7 +29,7 @@ data class TreatmentFormState(
     val withdrawalError: String? = null,
     val saveError: String? = null,
 ) {
-    /** Ile dni potrwa karencja liczac od dnia zabiegu. */
+    /** Czas trwania karencji w dniach, liczony od dnia zabiegu. */
     val withdrawalDays: Long?
         get() = withdrawalUntil?.let { ChronoUnit.DAYS.between(treatmentDate, it) }
 }
@@ -65,8 +65,7 @@ class TreatmentFormViewModel @Inject constructor(
             _state.update { it.copy(dateError = "Data zabiegu nie może być z przyszłości.") }
             return
         }
-        // Karencja biegnie OD zabiegu, więc data wcześniejsza nie ma sensu —
-        // a przepuszczona dawałaby „karencję zakończoną” już w chwili zapisu.
+        // Karencja liczona jest od dnia zabiegu.
         if (s.withdrawalUntil != null && s.withdrawalUntil.isBefore(s.treatmentDate)) {
             _state.update {
                 it.copy(withdrawalError = "Karencja nie może kończyć się przed dniem zabiegu.")

@@ -74,7 +74,7 @@ import kotlin.math.max
 
 private val PL = Locale.forLanguageTag("pl-PL")
 
-/** Kolory wykresów — zwalidowane pod kątem daltonizmu dla obu motywów. */
+/** Kolory wykresów dobrane pod kątem czytelności dla osób z zaburzeniami widzenia barw. */
 private data class ChartColors(
     val inflow: Color,
     val outflow: Color,
@@ -145,15 +145,7 @@ private enum class StatsTab(val label: String) {
     IRZ("IRZplus"),
 }
 
-/**
- * Statystyki rozłożone na zakładki.
- *
- * Wcześniej wszystkie sekcje leżały jedna pod drugą w jednym przewijaniu —
- * cztery różne pytania („ile mam sztuk”, „jaka jest struktura”, „co się działo
- * przez rok”, „co zalega w IRZ”) konkurowały o tę samą przestrzeń. Każde z nich
- * ma teraz własną zakładkę, a pierwsza odpowiada na najczęstsze z nich bez
- * przewijania.
- */
+/** Ekran statystyk stada podzielony na zakładki tematyczne. */
 @Composable
 private fun StatisticsContent(stats: HerdStats, modifier: Modifier = Modifier) {
     val colors = chartColors()
@@ -195,10 +187,7 @@ private fun StatisticsContent(stats: HerdStats, modifier: Modifier = Modifier) {
     }
 }
 
-/**
- * Odpowiedź na pytanie „jak stoi stado” bez przewijania i bez wykresu.
- * Liczba jest tu formą docelową — wykres nie dodałby niczego do pojedynczej wartości.
- */
+/** Zakładka podsumowania z kluczowymi wskaźnikami stada. */
 @Composable
 private fun OverviewTab(stats: HerdStats) {
     val colors = chartColors()
@@ -222,7 +211,6 @@ private fun OverviewTab(stats: HerdStats) {
         StatTile("Średni wiek", stats.averageAgeMonths.asAge())
     }
 
-    // Bilans roku jest ciekawszy niż suma ruchów: mówi, czy stado rośnie.
     val totals = stats.movementTotals
     val net = totals.inflow - totals.outflow
     SectionCard("Bilans 12 miesięcy") {
@@ -238,8 +226,6 @@ private fun OverviewTab(stats: HerdStats) {
         }
     }
 
-    // Sekcja pojawia się tylko wtedy, gdy jest co zrobić — pusta lista zadań
-    // nie musi zajmować miejsca.
     if (pending > 0 || rejected > 0) {
         SectionCard("Wymaga uwagi") {
             if (pending > 0) {
@@ -269,8 +255,7 @@ private fun StructureTab(stats: HerdStats, colors: ChartColors) {
         title = "Grupy użytkowe",
         hint = "Podział według wieku i płci — tak jak opisuje się stado w hodowli.",
     ) {
-        // Kategorie puste z natury (nieokreślona płeć, brak daty urodzenia)
-        // pokazujemy tylko wtedy, gdy faktycznie coś w nich jest.
+        // Kategorie opcjonalne są prezentowane wyłącznie, gdy nie są puste.
         val optional = setOf(AgeGroup.OTHER_SEX, AgeGroup.UNKNOWN_AGE)
         val rows = AgeGroup.entries
             .map { group -> group to (stats.ageGroups[group] ?: 0) }
@@ -307,7 +292,6 @@ private fun StructureTab(stats: HerdStats, colors: ChartColors) {
 private fun IrzTab(stats: HerdStats, colors: ChartColors) {
     val counts = stats.irzStatusCounts
 
-    // Terminowość to najbliższa miara celu aplikacji: czy hodowca zdąża w 7 dni.
     SectionCard("Terminowość zgłoszeń") {
         val percent = stats.reporting.onTimePercent
         if (percent == null) {
@@ -348,12 +332,7 @@ private fun IrzTab(stats: HerdStats, colors: ChartColors) {
     }
 }
 
-// --- Elementy ------------------------------------------------------------
-
-/**
- * Liczba wiodąca. Jedna wartość nie potrzebuje wykresu — potrzebuje rozmiaru
- * i podpisu, który mówi, czego dotyczy i na kiedy jest aktualna.
- */
+/** Wyróżniona wartość liczbowa z podpisem. */
 @Composable
 private fun HeroNumber(value: String, label: String, caption: String) {
     Card(
@@ -373,7 +352,7 @@ private fun HeroNumber(value: String, label: String, caption: String) {
     }
 }
 
-/** Liczba z podpisem — używana w rzędach podsumowań. */
+/** Wartość liczbowa z podpisem, używana w wierszach podsumowań. */
 @Composable
 private fun Counter(label: String, value: Int, color: Color, prefix: String = "") {
     Column(modifier = Modifier.semantics(mergeDescendants = true) {}) {
@@ -390,7 +369,7 @@ private fun Counter(label: String, value: Int, color: Color, prefix: String = ""
     }
 }
 
-/** Wiek w miesiącach na czytelny opis — „26 mies.” mówi mniej niż „2 lata 2 mies.”. */
+/** Formatuje wiek wyrażony w miesiącach jako lata i miesiące. */
 private fun Int?.asAge(): String {
     val months = this ?: return "—"
     val years = months / 12
@@ -403,11 +382,8 @@ private fun Int?.asAge(): String {
 }
 
 /**
- * Rząd kafelków o jednakowej wysokości.
- *
- * Same `weight(1f)` wyrównuje tylko szerokość — kafelek z dłuższym podpisem
- * łamał tekst na dwie linie i był wyższy od sąsiadów, przez co rząd wyglądał
- * na krzywy. `IntrinsicSize.Min` każe wszystkim przyjąć wysokość najwyższego.
+ * Wiersz kafelków o jednakowej wysokości. `IntrinsicSize.Min` wyrównuje wysokość
+ * kafelków do najwyższego z nich.
  */
 @Composable
 private fun StatTileRow(content: @Composable RowScope.() -> Unit) {
@@ -458,7 +434,7 @@ private fun Caption(text: String) {
     )
 }
 
-/** Poziome słupki jednego koloru z etykietą i wartością przy każdym słupku. */
+/** Poziomy wykres słupkowy z etykietą i wartością przy każdym słupku. */
 @Composable
 private fun HorizontalBars(rows: List<Pair<String, Int>>, color: Color) {
     val maxValue = max(1, rows.maxOfOrNull { it.second } ?: 0)
@@ -576,8 +552,8 @@ private fun LegendItem(color: Color, label: String) {
 }
 
 /**
- * Słupki rozbieżne: w górę przybyło (urodzenia + przybycia), w dół ubyło
- * (ubycia + padnięcia). Dotknięcie kolumny wybiera miesiąc do podglądu.
+ * Wykres słupkowy rozbieżny ruchu stada: powyżej osi przychody (urodzenia, przybycia),
+ * poniżej rozchody (ubycia, padnięcia). Dotknięcie kolumny wybiera miesiąc.
  */
 @Composable
 private fun MovementChart(
@@ -612,7 +588,7 @@ private fun MovementChart(
         val scale = (mid - 4.dp.toPx()) / maxValue
         val radius = CornerRadius(4.dp.toPx())
 
-        // Zaznaczenie wybranego miesiąca — tło kolumny.
+        // Wyróżnienie wybranego miesiąca.
         if (selected in movements.indices) {
             drawRect(
                 color = colors.grid.copy(alpha = 0.25f),
@@ -656,7 +632,7 @@ private fun MovementChart(
             }
         }
 
-        // Linia bazowa (zero).
+        // Oś zerowa.
         drawLine(
             color = colors.grid,
             start = Offset(0f, mid),

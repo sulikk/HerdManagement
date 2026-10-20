@@ -7,11 +7,8 @@ import org.junit.Test
 import java.time.LocalDate
 
 /**
- * Testy wyszukiwania i sortowania listy stada.
- *
- * Ekran ma pozostać użyteczny przy kilkuset sztukach, więc liczy się nie tylko to,
- * *czy* filtr działa, ale też czy hodowca znajdzie sztukę wpisując fragment kolczyka
- * albo imię bez polskich znaków — w oborze, w rękawicach, nikt nie pisze precyzyjnie.
+ * Testy wyszukiwania i sortowania listy zwierząt, w tym dopasowania po fragmencie
+ * numeru kolczyka i wyszukiwania bez polskich znaków diakrytycznych.
  */
 class AnimalSearchTest {
 
@@ -41,8 +38,6 @@ class AnimalSearchTest {
 
     private fun ids(result: List<Animal>) = result.map(Animal::id)
 
-    // --- Wyszukiwanie ---------------------------------------------------
-
     @Test
     fun `pusty tekst zwraca cale stado`() {
         assertEquals(4, stado.searchAndSort("", AnimalSort()).size)
@@ -66,7 +61,7 @@ class AnimalSearchTest {
 
     @Test
     fun `polskie znaki nie sa wymagane`() {
-        // „latka” ma znaleźć „Łatka” — w polu nikt nie przełącza klawiatury.
+        // Zapytanie bez znaków diakrytycznych dopasowuje „Łatka”.
         assertEquals(listOf(2L), ids(stado.searchAndSort("latka", AnimalSort())))
     }
 
@@ -79,8 +74,6 @@ class AnimalSearchTest {
     fun `brak dopasowania daje pusta liste`() {
         assertEquals(emptyList<Long>(), ids(stado.searchAndSort("burek", AnimalSort())))
     }
-
-    // --- Sortowanie -----------------------------------------------------
 
     @Test
     fun `domyslnie sortuje po kolczyku rosnaco`() {
@@ -95,7 +88,7 @@ class AnimalSearchTest {
 
     @Test
     fun `sortowanie po imieniu uwzglednia polski alfabet`() {
-        // „Łatka” musi wypaść między „Krasulą” a „Mrugą”, nie na końcu za „Z”.
+        // Polski porządek alfabetyczny: „Ł” między „L” a „M”.
         val sort = AnimalSort(AnimalSortField.NAME)
         assertEquals(listOf(1L, 2L, 3L, 4L), ids(stado.searchAndSort("", sort)))
     }
@@ -118,11 +111,9 @@ class AnimalSearchTest {
     @Test
     fun `sortowanie po rasie rozstrzyga remisy kolczykiem`() {
         val sort = AnimalSort(AnimalSortField.BREED)
-        // Obie holsztyńskie przed simentalską, między sobą po kolczyku.
+        // Przy równej rasie o kolejności decyduje numer kolczyka.
         assertEquals(listOf(1L, 2L, 3L, 4L), ids(stado.searchAndSort("", sort)))
     }
-
-    // --- Przełączanie kryterium -----------------------------------------
 
     @Test
     fun `klikniecie w aktywne kryterium odwraca kierunek`() {

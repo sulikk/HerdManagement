@@ -16,10 +16,7 @@ import javax.inject.Inject
 
 enum class ChatAuthor { USER, ASSISTANT, SYSTEM }
 
-/**
- * Wydźwięk wpisu systemowego — decyduje o ikonie i kolorze.
- * Wpis o zapisie w ewidencji musi wyglądać inaczej niż odmowa czy błąd.
- */
+/** Charakter wpisu systemowego, określający jego ikonę i kolor. */
 enum class MessageTone { NEUTRAL, SUCCESS, REJECTED, ERROR }
 
 data class ChatEntry(
@@ -36,10 +33,10 @@ data class AssistantState(
     val pending: AssistantAction? = null,
     val error: String? = null,
 ) {
-    /** Rozmowa jeszcze się nie zaczęła — jest miejsce na podpowiedzi. */
+    /** Określa, czy użytkownik nie wysłał jeszcze żadnej wiadomości. */
     val fresh: Boolean get() = entries.none { it.author == ChatAuthor.USER }
 
-    /** Dopóki propozycja czeka na decyzję, backend nie przyjmie kolejnej wiadomości. */
+    /** Blokada wprowadzania podczas oczekiwania na odpowiedź lub decyzję użytkownika. */
     val inputBlocked: Boolean get() = busy || pending != null
 }
 
@@ -47,7 +44,7 @@ private const val GREETING =
     "Zapytaj o stado albo poproś o przygotowanie wpisu do ewidencji. " +
         "Każdy zapis pokażę Ci do zatwierdzenia — bez Twojej zgody nic nie trafi do bazy."
 
-/** Gotowe pytania na start — hodowca nie musi zgadywać, co asystent potrafi. */
+/** Przykładowe pytania wyświetlane na początku rozmowy. */
 val SUGGESTED_PROMPTS = listOf(
     "Co muszę zgłosić do IRZplus?",
     "Które sztuki są na karencji?",
@@ -70,8 +67,7 @@ class AssistantViewModel @Inject constructor(
     private var nextId = 1L
 
     init {
-        // Brak odpowiedzi serwera nie jest tu błędem wartym alertu — zgłosi się
-        // przy pierwszej wiadomości. Ostrzegamy tylko o braku klucza do modelu.
+        // Ostrzeżenie dotyczy wyłącznie braku konfiguracji modelu po stronie serwera.
         viewModelScope.launch {
             repository.isConfigured().onSuccess { configured ->
                 if (!configured) {
@@ -92,7 +88,7 @@ class AssistantViewModel @Inject constructor(
 
     fun send() = ask(_state.value.input)
 
-    /** Wysyła treść wprost — używane też przez podpowiedzi startowe. */
+    /** Wysyła wiadomość o podanej treści. */
     fun ask(message: String) {
         val text = message.trim()
         if (text.isEmpty() || _state.value.inputBlocked) return
@@ -106,7 +102,7 @@ class AssistantViewModel @Inject constructor(
         }
     }
 
-    /** Decyzja użytkownika w sprawie zaproponowanej akcji (polityka F12 / Zad. 8). */
+    /** Przekazuje decyzję użytkownika dotyczącą zaproponowanej akcji (wymaganie F12). */
     fun decide(approved: Boolean) {
         val id = conversationId ?: return
         if (_state.value.pending == null) return
@@ -144,8 +140,7 @@ class AssistantViewModel @Inject constructor(
                 tone = tone,
             )
         }
-        // Narzędzia asystenta zapisują w bazie backendu, nie w Room. Bez tego
-        // zatwierdzony przed chwilą wpis nie pojawiłby się na karcie zwierzęcia.
+        // Akcje asystenta zapisują dane w backendzie, dlatego wymagana jest synchronizacja.
         if (turn.executedActions.any { it.approved && it.ok }) {
             syncManager.scheduleSync()
         }

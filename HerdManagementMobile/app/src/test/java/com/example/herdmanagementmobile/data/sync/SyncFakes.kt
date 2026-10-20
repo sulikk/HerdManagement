@@ -32,10 +32,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 
 /**
- * Atrapy DAO i API dla testów [SyncPuller] — zwykłe mapy w pamięci zamiast Room.
- *
- * Interesuje nas logika mapowania identyfikatorów i rozstrzygania konfliktów,
- * a ta nie potrzebuje ani emulatora, ani prawdziwej bazy.
+ * Atrapy DAO i API dla testów [SyncPuller], przechowujące dane w pamięci.
+ * Umożliwiają testowanie logiki mapowania identyfikatorów i rozstrzygania konfliktów
+ * bez emulatora i bazy Room.
  */
 class Fakes {
     val animals = FakeAnimalDao()
@@ -57,7 +56,7 @@ class FakeMarkerStore : SyncMarkerStore {
         this.marker = marker
     }
 
-    /** Jak w [SyncStateRepository]: inny backend unieważnia znacznik. */
+    /** Odwzorowuje [SyncStateRepository.bindToServer]: zmiana serwera unieważnia znacznik. */
     override suspend fun bindToServer(baseUrl: String) {
         if (server != baseUrl) {
             marker = null
@@ -74,7 +73,7 @@ class FakeApi(private val changes: SyncChangesDto) : HerdApiService {
         return changes
     }
 
-    // Pozostałe operacje nie biorą udziału w pobieraniu zmian.
+    // Pozostałe operacje nie są wykorzystywane przy pobieraniu zmian.
     override suspend fun getListingDraft(animalId: Long): ListingDraftDto = unsupported()
     override suspend fun createListing(body: ListingWriteDto): ListingDto = unsupported()
     override suspend fun updateListing(id: Long, body: ListingWriteDto): ListingDto = unsupported()
@@ -243,15 +242,15 @@ class FakeInquiryDao : InquiryDao {
 }
 
 class FakeSyncDao : SyncDao {
-    /** klucz: encja + id lokalne -> id zdalne */
+    /** Mapowanie (encja, identyfikator lokalny) na identyfikator zdalny. */
     private val mappings = mutableMapOf<Pair<String, Long>, Long>()
     var unsent = 0
 
-    /** Ile powiązań encji jest w mapie — do sprawdzania, czy śmieci nie zostają. */
+    /** Zwraca liczbę mapowań danej encji. */
     fun mappingCount(entity: String): Int = mappings.keys.count { it.first == entity }
 
-    // putMapping zostaje domyślną implementacją z [SyncDao] — atrapa dostarcza tylko
-    // dwie operacje składowe, żeby test sprawdzał prawdziwy niezmiennik mapy.
+    // Metoda putMapping pochodzi z domyślnej implementacji [SyncDao], co pozwala
+    // testować rzeczywisty niezmiennik mapowania.
     override suspend fun insertMapping(mapping: IdMappingEntity) {
         mappings[mapping.entity to mapping.localId] = mapping.remoteId
     }
@@ -260,7 +259,7 @@ class FakeSyncDao : SyncDao {
         mappings.entries.removeAll { it.key.first == entity && it.value == remoteId }
     }
 
-    /** Dzieci zna tylko prawdziwa baza; w teście czyścimy mapę wprost. */
+    /** Operacje wymagające złączeń z tabelami danych nie są odwzorowywane w atrapie. */
     override suspend fun deleteEventMappingsForAnimal(animalId: Long) = Unit
     override suspend fun deleteTreatmentMappingsForAnimal(animalId: Long) = Unit
     override suspend fun deleteListingMappingsForAnimal(animalId: Long) = Unit

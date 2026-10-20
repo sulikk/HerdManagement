@@ -3,17 +3,14 @@ package com.example.herdmanagementmobile.domain.model
 import java.time.LocalDateTime
 
 /**
- * Cykl życia ogłoszenia sprzedażowego (zadanie 9).
- *
- * Rozdzielenie [DRAFT] i [PUBLISHED] realizuje wymaganie F12: ogłoszenie nie staje
- * się widoczne samo z siebie, potrzebna jest osobna decyzja hodowcy.
+ * Status ogłoszenia sprzedażowego. Rozdzielenie [DRAFT] i [PUBLISHED] realizuje
+ * wymaganie F12 — publikacja wymaga odrębnej decyzji użytkownika.
  */
 enum class ListingStatus { DRAFT, PUBLISHED, SOLD, WITHDRAWN }
 
 /**
- * Ogłoszenie sprzedażowe. Dane zwierzęcia (kolczyk, rasa, data urodzenia) nie są
- * tu kopiowane — ogłoszenie wskazuje kartę zwierzęcia, więc giełda i ewidencja
- * rejestrowa korzystają z jednego źródła prawdy.
+ * Ogłoszenie sprzedażowe. Dane zwierzęcia nie są kopiowane — ogłoszenie odwołuje się
+ * do karty zwierzęcia, która stanowi jedyne źródło tych danych.
  */
 data class Listing(
     val id: Long = 0L,
@@ -23,10 +20,10 @@ data class Listing(
     val photoUri: String? = null,
     val status: ListingStatus = ListingStatus.DRAFT,
     val publishedAt: LocalDateTime? = null,
-    /** Odznaka „dane potwierdzone w IRZplus” (F14). */
+    /** Odznaka „dane potwierdzone w IRZplus” (wymaganie F14). */
     val irzVerified: Boolean = false,
     val irzVerifiedAt: LocalDateTime? = null,
-    /** Powód braku odznaki — hodowca widzi, co poprawić. */
+    /** Przyczyna braku odznaki weryfikacji, prezentowana użytkownikowi. */
     val irzMessage: String? = null,
     val createdAt: LocalDateTime = LocalDateTime.now(),
 ) {
@@ -34,7 +31,7 @@ data class Listing(
     val acceptsInquiries: Boolean get() = status == ListingStatus.PUBLISHED
 }
 
-/** Zapytanie kupującego o ogłoszenie — powstaje na serwerze, do telefonu trafia synchronizacją. */
+/** Zapytanie kupującego dotyczące ogłoszenia; tworzone po stronie serwera i pobierane synchronizacją. */
 data class Inquiry(
     val id: Long = 0L,
     val listingId: Long,
@@ -44,10 +41,7 @@ data class Inquiry(
     val createdAt: LocalDateTime = LocalDateTime.now(),
 )
 
-/**
- * Dane karty zwierzęcia do wstępnego wypełnienia formularza ogłoszenia (F13).
- * Hodowca nie przepisuje ręcznie kolczyka ani rasy.
- */
+/** Dane karty zwierzęcia służące do wstępnego wypełnienia formularza ogłoszenia (wymaganie F13). */
 data class ListingDraft(
     val animalId: Long,
     val earTag: String,

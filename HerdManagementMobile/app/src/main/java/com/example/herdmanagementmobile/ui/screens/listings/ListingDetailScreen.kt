@@ -59,12 +59,9 @@ import java.time.format.DateTimeFormatter
 private val stamp: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
 
 /**
- * Karta ogłoszenia sprzedażowego (zadanie 9).
- *
- * Ekran prowadzi przez jedną ścieżkę: sprawdź dane w rejestrze → opublikuj →
- * odbierz zapytania → rozlicz sprzedaż. Weryfikacja stoi przed publikacją nie
- * tylko wizualnie — backend jej wymaga i sprawdza ponownie w chwili publikowania
- * (F12 + F14), więc ekran musi tłumaczyć, dlaczego przycisk bywa nieaktywny.
+ * Karta ogłoszenia sprzedażowego. Prowadzi przez kolejne etapy: weryfikację danych
+ * w rejestrze, publikację, obsługę zapytań i oznaczenie sprzedaży. Publikacja wymaga
+ * wcześniejszej weryfikacji (wymagania F12 i F14).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -173,10 +170,7 @@ fun ListingDetailScreen(
     }
 }
 
-/**
- * Nagłówek oferty: cena, stan i — co najważniejsze — której sztuki dotyczy.
- * Bez kolczyka i rasy ekran nie odpowiadał na pierwsze pytanie hodowcy.
- */
+/** Nagłówek ogłoszenia z ceną, statusem oraz danymi zwierzęcia. */
 @Composable
 private fun OfferHeader(listing: Listing, animal: Animal?) {
     Card(
@@ -259,7 +253,7 @@ private fun StatusChip(status: ListingStatus) {
     )
 }
 
-/** Wymaganie F14 — odznaka, powód jej braku i przycisk ponownego sprawdzenia. */
+/** Sekcja weryfikacji w IRZplus (wymaganie F14): odznaka, przyczyna jej braku i ponowne sprawdzenie. */
 @Composable
 private fun VerificationSection(listing: Listing, onVerify: () -> Unit) {
     SectionCard(
@@ -360,7 +354,7 @@ private fun ActionsSection(
     }
 }
 
-/** Dialog potwierdzenia publikacji — wymaganie F12. */
+/** Okno potwierdzenia publikacji ogłoszenia (wymaganie F12). */
 @Composable
 private fun PublishDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(

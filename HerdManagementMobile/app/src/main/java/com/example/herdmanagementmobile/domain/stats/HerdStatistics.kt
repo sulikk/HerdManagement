@@ -13,12 +13,8 @@ import java.time.YearMonth
 import java.time.temporal.ChronoUnit
 
 /**
- * Grupa wiekowo-płciowa według nazewnictwa hodowlanego.
- *
- * Wcześniej płeć rozróżnialiśmy dopiero powyżej 24 miesięcy, więc roczny byczek
- * trafiał do bezpłciowej „młodzieży” i znikał z obrazu stada jako samiec.
- * Hodowca myśli inaczej: jałówka i byczek to dwie różne kategorie użytkowe
- * od chwili, gdy przestają być cielętami.
+ * Grupa wiekowo-płciowa według nazewnictwa hodowlanego. Powyżej wieku cielęcego
+ * płeć określa kategorię użytkową (jałówka, byczek), a wiek — dojrzałość.
  */
 enum class AgeGroup {
     /** Cielęta obu płci, do [HerdStats.CALF_MONTHS] miesięcy. */
@@ -27,7 +23,7 @@ enum class AgeGroup {
     /** Jałówki — samice od odsadzenia do [HerdStats.ADULT_MONTHS] miesięcy. */
     HEIFERS,
 
-    /** Byczki i opasy — samce w tym samym przedziale wieku. */
+    /** Byczki i opasy — samce od odsadzenia do [HerdStats.ADULT_MONTHS] miesięcy. */
     YOUNG_BULLS,
 
     /** Krowy — samice dorosłe. */
@@ -36,12 +32,14 @@ enum class AgeGroup {
     /** Buhaje — samce dorosłe. */
     BULLS,
 
-    /** Sztuki o nieokreślonej płci, poza wiekiem cielęcym. */
+    /** Zwierzęta o nieokreślonej płci, powyżej wieku cielęcego. */
     OTHER_SEX,
 
+    /** Zwierzęta bez podanej daty urodzenia. */
     UNKNOWN_AGE,
 }
 
+/** Liczba zdarzeń zmieniających stan stada w danym miesiącu. */
 data class MonthlyMovement(
     val month: YearMonth,
     val births: Int = 0,
@@ -54,12 +52,10 @@ data class MonthlyMovement(
 }
 
 /**
- * Terminowość zgłoszeń do IRZplus.
+ * Terminowość zgłoszeń do IRZplus względem ustawowego terminu 7 dni.
  *
- * Liczymy tylko zdarzenia, które faktycznie trafiły do rejestru i mają znacznik
- * wysyłki — reszta nic nie mówi o dyscyplinie zgłoszeń, a zaniżałaby wynik.
- * To najbliższa miara celu całej pracy: czy aplikacja pomaga zdążyć w ustawowym
- * terminie 7 dni.
+ * Uwzględniane są wyłącznie zdarzenia wysłane do rejestru (z ustawionym znacznikiem
+ * wysyłki).
  */
 data class ReportingStats(
     val onTime: Int = 0,
@@ -67,30 +63,31 @@ data class ReportingStats(
 ) {
     val total: Int get() = onTime + late
 
-    /** Odsetek zgłoszeń w terminie; `null`, gdy nie ma jeszcze czego liczyć. */
+    /** Odsetek zgłoszeń terminowych; `null`, gdy brak wysłanych zgłoszeń. */
     val onTimePercent: Int?
         get() = if (total == 0) null else (onTime * 100) / total
 }
 
+/** Zagregowane statystyki stada prezentowane na ekranie statystyk. */
 data class HerdStats(
-    /** Zwierzęta obecnie w stadzie (bez ubyłych i padłych). */
+    /** Liczba zwierząt obecnych w stadzie. */
     val inHerd: Int,
-    /** Zwierzęta rozliczone — ostatnie zdarzenie to ubycie lub padnięcie. */
+    /** Liczba zwierząt, których ostatnim zdarzeniem jest ubycie lub padnięcie. */
     val leftHerd: Int,
     val ageGroups: Map<AgeGroup, Int>,
-    /** Rasy w kolejności malejącej liczebności; ogon zwinięty do [OTHER_BREEDS]. */
+    /** Rasy w kolejności malejącej liczebności; najrzadsze zgrupowane jako [OTHER_BREEDS]. */
     val breeds: List<Pair<String, Int>>,
-    /** Ostatnie [MONTHS] miesięcy, od najstarszego. */
+    /** Ruch stada w ostatnich [MONTHS] miesiącach, od najstarszego. */
     val movements: List<MonthlyMovement>,
-    /** Zwierzęta w stadzie z trwającą karencją. */
+    /** Liczba zwierząt w stadzie objętych trwającą karencją. */
     val animalsInWithdrawal: Int,
     val treatmentsLast12Months: Int,
     val irzStatusCounts: Map<IrzStatus, Int>,
-    /** Średni wiek sztuk w stadzie, w miesiącach; `null`, gdy brak dat urodzenia. */
+    /** Średni wiek zwierząt w miesiącach; `null`, gdy brak dat urodzenia. */
     val averageAgeMonths: Int? = null,
-    /** Liczebność według płci — niezależnie od wieku. */
+    /** Liczebność według płci, niezależnie od wieku. */
     val sexCounts: Map<Sex, Int> = emptyMap(),
-    /** Terminowość zgłoszeń do IRZplus — miara tego, po co powstała ta aplikacja. */
+    /** Terminowość zgłoszeń do IRZplus. */
     val reporting: ReportingStats = ReportingStats(),
 ) {
     val movementTotals: MonthlyMovement
@@ -113,6 +110,7 @@ data class HerdStats(
     }
 }
 
+/** Oblicza statystyki stada na podstawie zwierząt, zdarzeń i leczeń. */
 object HerdStatistics {
 
     private val CLOSING = setOf(EventType.DEPARTURE, EventType.DEATH)
@@ -123,8 +121,8 @@ object HerdStatistics {
         treatments: List<Treatment>,
         today: LocalDate = LocalDate.now(),
     ): HerdStats {
-        // Ruch stada i terminowość liczą się tylko ze zdarzeń faktycznych
-        // (patrz [withoutRejected]); rozkład statusów IRZ — ze wszystkich.
+        // Ruch stada i terminowość obliczane są bez zgłoszeń odrzuconych,
+        // rozkład statusów IRZ — ze wszystkich zdarzeń.
         val actual = events.withoutRejected()
         val eventsByAnimal = events.groupBy { it.animalId }
         val present = animals.filter { isInHerd(eventsByAnimal[it.id].orEmpty()) }
@@ -156,7 +154,7 @@ object HerdStatistics {
         )
     }
 
-    /** Średni wiek sztuk, które mają podaną datę urodzenia. */
+    /** Oblicza średni wiek zwierząt z podaną datą urodzenia. */
     private fun averageAgeMonths(animals: List<Animal>, today: LocalDate): Int? {
         val ages = animals.mapNotNull { animal ->
             animal.birthDate?.let { ChronoUnit.MONTHS.between(it, today) }
@@ -165,12 +163,9 @@ object HerdStatistics {
     }
 
     /**
-     * Zgłoszenie uznajemy za terminowe, gdy trafiło do rejestru najpóźniej
-     * siódmego dnia od zdarzenia. Zdarzenia jeszcze niewysłane nie wchodzą
-     * do rachunku — nie są spóźnione, dopóki termin nie minie.
-     *
-     * Odrzucone odsiewa już wywołujący: mają znacznik wysłania, ale rejestr ich nie
-     * przyjął, więc policzone jako „w terminie” zawyżałyby dyscyplinę zgłoszeń.
+     * Oblicza terminowość zgłoszeń. Zgłoszenie jest terminowe, jeżeli zostało wysłane
+     * najpóźniej siódmego dnia od zdarzenia. Lista wejściowa nie powinna zawierać
+     * zgłoszeń odrzuconych.
      */
     private fun reporting(events: List<AnimalEvent>): ReportingStats {
         val submitted = events.filter { it.irzSubmittedAt != null }
@@ -182,9 +177,8 @@ object HerdStatistics {
     }
 
     /**
-     * Zwierzę jest w stadzie, jeśli jego najnowsze **faktyczne** zdarzenie nie jest
-     * ubyciem ani padnięciem. Zgłoszenie odrzucone przez rejestr nie zmieniło niczego
-     * w IRZplus, więc nie może też zmieniać stanu stada w aplikacji.
+     * Określa, czy zwierzę znajduje się w stadzie, tj. czy jego ostatnie zdarzenie
+     * (z pominięciem zgłoszeń odrzuconych) nie jest ubyciem ani padnięciem.
      */
     fun isInHerd(animalEvents: List<AnimalEvent>): Boolean {
         val last = animalEvents.withoutRejected()
@@ -192,13 +186,12 @@ object HerdStatistics {
         return last == null || last.type !in CLOSING
     }
 
+    /** Przypisuje zwierzę do grupy wiekowo-płciowej według stanu na dzień [today]. */
     fun ageGroup(animal: Animal, today: LocalDate): AgeGroup {
         val birth = animal.birthDate ?: return AgeGroup.UNKNOWN_AGE
         val months = ChronoUnit.MONTHS.between(birth, today)
         if (months < HerdStats.CALF_MONTHS) return AgeGroup.CALVES
 
-        // Powyżej wieku cielęcego płeć decyduje o kategorii użytkowej,
-        // a wiek tylko o tym, czy sztuka jest już dorosła.
         val adult = months >= HerdStats.ADULT_MONTHS
         return when (animal.sex) {
             Sex.FEMALE -> if (adult) AgeGroup.COWS else AgeGroup.HEIFERS

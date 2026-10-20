@@ -7,11 +7,8 @@ import java.time.LocalDate
 import java.time.ZoneOffset
 
 /**
- * Daty do dziś włącznie.
- *
- * Zdarzenie zwierzęce i zabieg to zapisy tego, co się wydarzyło — data z przyszłości
- * jest zawsze pomyłką. Blokujemy ją już w kalendarzu, zamiast odrzucać przy zapisie;
- * rejestr IRZplus i tak zwróciłby wtedy błąd ERR_DATA_PRZYSZLA.
+ * Ogranicza wybór w kalendarzu do dat nie późniejszych niż bieżąca. Zdarzenia i zabiegi
+ * dotyczą przeszłości, a IRZplus odrzuca daty przyszłe (błąd ERR_DATA_PRZYSZLA).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 object PastOrToday : SelectableDates {
@@ -21,6 +18,6 @@ object PastOrToday : SelectableDates {
     override fun isSelectableYear(year: Int): Boolean = year <= LocalDate.now().year
 }
 
-/** Konwersja z licznika milisekund używanego przez `DatePicker`. */
+/** Konwertuje liczbę milisekund (UTC) zwracaną przez `DatePicker` na [LocalDate]. */
 fun Long.toLocalDate(): LocalDate =
     Instant.ofEpochMilli(this).atZone(ZoneOffset.UTC).toLocalDate()

@@ -1,8 +1,8 @@
-"""Wspólne fixtury testów backendu.
+"""Wspólne fikstury testów backendu.
 
-Każdy test dostaje:
-- świeżą bazę SQLite w pamięci (nie dotyka herd.db),
-- świeży stan mocka IRZplus (tokeny, rejestr zwierząt, liczniki dokumentów).
+Każdy test otrzymuje:
+- nową bazę SQLite w pamięci (niezależną od herd.db),
+- nowy stan symulatora IRZplus (tokeny, rejestr zwierząt, liczniki dokumentów).
 """
 from collections.abc import Iterator
 
@@ -24,7 +24,7 @@ SEED_ZWIERZE = "PL005338887002"
 
 @pytest.fixture
 def irz_store(monkeypatch: pytest.MonkeyPatch) -> IrzplusStore:
-    """Podmienia współdzielony stan mocka na nową instancję (izolacja testów)."""
+    """Zastępuje współdzielony stan symulatora nową instancją (izolacja testów)."""
     fresh = IrzplusStore()
     monkeypatch.setattr(irzplus_router, "store", fresh)
     return fresh
@@ -48,7 +48,7 @@ def client(irz_store: IrzplusStore) -> Iterator[TestClient]:
             db.close()
 
     app.dependency_overrides[get_db] = override_get_db
-    # Bez bloku `with` — lifespan (init_db na pliku herd.db) się nie uruchamia.
+    # Brak bloku `with` zapobiega uruchomieniu lifespan (init_db na pliku herd.db).
     yield TestClient(app)
     app.dependency_overrides.clear()
     engine.dispose()

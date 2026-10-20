@@ -1,8 +1,7 @@
-"""Stan i logika mocka IRZplus (in-memory).
+"""Stan i logika symulatora IRZplus.
 
-Mock utrzymuje własny rejestr zwierząt (jak system państwowy) oraz wydane tokeny
-i przyjęte dokumenty. Stan resetuje się przy restarcie procesu — wystarczający
-do testów integracyjnych i demonstracji.
+Symulator przechowuje w pamięci rejestr zwierząt, wydane tokeny oraz przyjęte
+dokumenty. Stan jest tracony przy restarcie procesu.
 """
 import re
 import secrets
@@ -20,11 +19,11 @@ TOKEN_TTL_SECONDS = 3600
 
 
 class IrzplusStore:
-    """Pamięciowy magazyn stanu mocka, bezpieczny dla współbieżnych żądań."""
+    """Magazyn stanu symulatora w pamięci, bezpieczny przy współbieżnych żądaniach."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._tokens: dict[str, tuple[str, datetime]] = {}  # token -> (producent, expiry)
+        self._tokens: dict[str, tuple[str, datetime]] = {}  # token -> (producent, termin ważności)
         self._animals: dict[str, ZwierzeIndywidualneDTO] = {}
         self._closed: set[str] = set()  # zwierzęta rozliczone (ubyłe/padłe)
         self._documents: list[dict] = []
@@ -40,8 +39,6 @@ class IrzplusStore:
             dataUrodzenia=date(2023, 4, 1),
         )
         self._animals[seed.numerIdentyfikacyjnyZwierzecia] = seed
-
-    # --- Autoryzacja ---------------------------------------------------
 
     def issue_token(self, numer_producenta: str) -> tuple[str, int]:
         token = secrets.token_urlsafe(24)
@@ -60,8 +57,6 @@ class IrzplusStore:
                 del self._tokens[token]
                 return None
             return producent
-
-    # --- Rejestr zwierząt ---------------------------------------------
 
     def list_animals(self) -> list[ZwierzeIndywidualneDTO]:
         with self._lock:
@@ -88,8 +83,6 @@ class IrzplusStore:
         with self._lock:
             self._closed.add(numer)
 
-    # --- Dokumenty -----------------------------------------------------
-
     def next_document_number(self, prefix: str) -> str:
         with self._lock:
             year = date.today().year
@@ -114,17 +107,17 @@ MAX_OPOZNIENIE_DNI = 7  # ustawowy termin zgłoszenia zdarzenia do IRZ
 
 
 def cyfra_kontrolna(pierwsze_11_cyfr: str) -> int:
-    """Cyfra kontrolna numeru bydła: wagi 3,1,3,1,..., wynik (10 - suma mod 10) mod 10.
+    """Oblicza cyfrę kontrolną numeru bydła: wagi 3, 1, 3, 1, …, wynik (10 - suma mod 10) mod 10.
 
-    Algorytm ustalony empirycznie na rzeczywistych numerach z katalogów buhajów
-    (rozporządzenie określa tylko pozycję cyfry kontrolnej, nie sposób jej liczenia).
+    Algorytm ustalono empirycznie na numerach z katalogów buhajów; rozporządzenie
+    określa wyłącznie pozycję cyfry kontrolnej.
     """
     suma = sum(int(c) * (3 if i % 2 == 0 else 1) for i, c in enumerate(pierwsze_11_cyfr))
     return (10 - suma % 10) % 10
 
 
 def poprawny_numer_zwierzecia(numer: str) -> bool:
-    """Format PL + 12 cyfr oraz zgodna cyfra kontrolna."""
+    """Sprawdza format ``PL`` + 12 cyfr oraz poprawność cyfry kontrolnej."""
     return bool(EAR_TAG_PATTERN.match(numer)) and cyfra_kontrolna(numer[2:13]) == int(numer[13])
 
 
@@ -199,5 +192,5 @@ def validate_padniecie(store: "IrzplusStore", pozycja: PozycjaZgloszeniaDTO) -> 
     return bledy
 
 
-# Pojedyncza instancja współdzielona przez router (mock = stan procesu).
+# Instancja współdzielona przez router; stan symulatora jest stanem procesu.
 store = IrzplusStore()

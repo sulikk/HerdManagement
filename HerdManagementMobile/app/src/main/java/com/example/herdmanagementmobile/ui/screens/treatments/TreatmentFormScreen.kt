@@ -45,11 +45,8 @@ import java.time.ZoneOffset
 private enum class DatePickerTarget { TREATMENT, WITHDRAWAL }
 
 /**
- * Formularz wpisu o leczeniu.
- *
- * Kluczowe pole to karencja: przez ten czas mleko i mięso zwierzęcia nie mogą
- * trafić do obrotu. Dlatego po wybraniu daty ekran mówi wprost, ile dni potrwa,
- * zamiast zostawiać użytkownikowi liczenie w pamięci.
+ * Formularz leczenia (wymaganie F3). Po wyborze daty końca karencji prezentowany jest
+ * czas jej trwania.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -189,8 +186,7 @@ fun TreatmentFormScreen(
                 .atStartOfDay(ZoneOffset.UTC)
                 .toInstant()
                 .toEpochMilli(),
-            // Zabieg to zapis przeszłości, ale karencja z definicji sięga w przyszłość —
-            // ograniczenie dat obowiązuje więc tylko dla daty zabiegu.
+            // Ograniczenie do dat przeszłych dotyczy wyłącznie daty zabiegu.
             selectableDates = if (target == DatePickerTarget.TREATMENT) {
                 PastOrToday
             } else {
@@ -220,7 +216,7 @@ fun TreatmentFormScreen(
     }
 }
 
-/** Podsumowanie karencji: ile potrwa i czy jeszcze trwa. */
+/** Zwraca opis karencji: czas trwania i informację, czy nadal trwa. */
 private fun withdrawalSummary(state: TreatmentFormState): String {
     val days = state.withdrawalDays ?: return "Zostaw puste, jeśli lek nie wymaga karencji."
     val length = "Karencja potrwa $days ${DeadlineText.days(days)} od dnia zabiegu"
@@ -230,7 +226,7 @@ private fun withdrawalSummary(state: TreatmentFormState): String {
     return length + remaining
 }
 
-/** Karencja nie może kończyć się przed dniem zabiegu. */
+/** Ogranicza wybór daty końca karencji do dni nie wcześniejszych niż data zabiegu. */
 @OptIn(ExperimentalMaterial3Api::class)
 private class NotBeforeTreatment(
     private val treatmentDate: LocalDate,

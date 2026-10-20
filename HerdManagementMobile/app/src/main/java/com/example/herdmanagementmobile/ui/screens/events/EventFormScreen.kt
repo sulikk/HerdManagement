@@ -56,11 +56,8 @@ import com.example.herdmanagementmobile.ui.common.toLocalDate
 import java.time.ZoneOffset
 
 /**
- * Formularz zdarzenia zwierzęcego.
- *
- * Najważniejsze, czego ekran ma nauczyć: od daty zdarzenia biegnie ustawowy termin
- * 7 dni na zgłoszenie do IRZplus. Dlatego termin jest wyliczany i pokazywany od razu
- * po wyborze daty, zanim użytkownik zdecyduje, czy zgłasza teraz, czy później.
+ * Formularz zdarzenia zwierzęcego. Po wyborze daty prezentowany jest wyliczony
+ * 7-dniowy termin zgłoszenia do IRZplus.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -96,9 +93,7 @@ fun EventFormScreen(
                         )
                         Spacer(Modifier.height(8.dp))
                     }
-                    // Powód blokady musi być przy przycisku, który nie działa. Samo
-                    // ostrzeżenie w karcie rodzaju zdarzenia bywa odwinięte poza ekran,
-                    // a wyłączony przycisk bez wyjaśnienia wygląda jak awaria aplikacji.
+                    // Przyczyna blokady jest prezentowana bezpośrednio nad nieaktywnym przyciskiem.
                     if (state.blocked) {
                         state.conflict?.let { conflict ->
                             Text(
@@ -110,9 +105,7 @@ fun EventFormScreen(
                         }
                     }
                     Button(
-                        // Sprzeczność z ewidencją wymaga potwierdzenia, zanim dojdzie do
-                        // pytania o zgłoszenie — inaczej hodowca kliknie „Zapisz i zgłoś”
-                        // i dopiero rejestr powie mu, że taka sztuka jest już zapisana.
+                        // Sprzeczność z ewidencją jest potwierdzana przed pytaniem o zgłoszenie.
                         onClick = {
                             if (viewModel.validate()) {
                                 if (state.conflict != null) {
@@ -230,14 +223,13 @@ fun EventFormScreen(
         }
     }
 
-    // Gdy sprzeczność zniknie (historia zmieniła się w tle), okno nie ma czego
-    // dotyczyć — zamykamy je efektem, a nie zapisem stanu w trakcie kompozycji.
+    // Zamknięcie okna, gdy sprzeczność przestanie występować (np. po synchronizacji).
     LaunchedEffect(state.conflict) {
         if (state.conflict == null) showConflictDialog = false
     }
 
     state.conflict?.let { conflict ->
-        // Blokady nie da się przekliknąć, więc nie ma dla niej okna z „Dodaj mimo to”.
+        // Sprzeczność blokująca nie może zostać zignorowana.
         if (!showConflictDialog || conflict.blocking) return@let
         AlertDialog(
             onDismissRequest = { showConflictDialog = false },
@@ -250,9 +242,7 @@ fun EventFormScreen(
                         "wpis jest błędny, możesz dodać zdarzenie mimo to.",
                 )
             },
-            // Akcją główną jest poprawa wpisu: w tych przypadkach rejestr prawie zawsze
-            // odrzuci zgłoszenie, więc wymuszenie zapisu ma być wyborem świadomym,
-            // a nie ruchem, który robi się odruchowo największym przyciskiem.
+            // Akcją główną jest poprawa wpisu; zapis mimo ostrzeżenia jest akcją drugorzędną.
             confirmButton = {
                 Button(onClick = { showConflictDialog = false }) { Text("Popraw") }
             },
@@ -312,10 +302,7 @@ fun EventFormScreen(
     }
 }
 
-/**
- * Ostrzeżenie o sprzeczności z ewidencją, widoczne od razu po wyborze rodzaju
- * zdarzenia — zanim użytkownik wypełni resztę formularza.
- */
+/** Ostrzeżenie o sprzeczności z ewidencją, wyświetlane po wyborze rodzaju zdarzenia. */
 @Composable
 private fun ConflictWarning(text: String) {
     Row(
@@ -336,10 +323,7 @@ private fun ConflictWarning(text: String) {
     }
 }
 
-/**
- * Treść ostrzeżenia zależy też od zdarzenia, które użytkownik właśnie dodaje:
- * ta sama historia inaczej kłóci się z ubyciem, a inaczej z padnięciem.
- */
+/** Zwraca treść ostrzeżenia zależną od rodzaju sprzeczności i dodawanego zdarzenia. */
 private fun EventConflict.warning(type: EventType): String {
     val date = conflictingDate.format(dayFormat)
     return when (kind) {
@@ -372,13 +356,7 @@ private fun EventConflict.warning(type: EventType): String {
     }
 }
 
-/**
- * Termin zgłoszenia wyliczony z daty zdarzenia.
- *
- * Kolor i treść zmieniają się wraz z pilnością — przy zdarzeniu sprzed tygodnia
- * użytkownik ma od razu wiedzieć, że jest po czasie, a nie dowiadywać się o tym
- * dopiero na ekranie terminów.
- */
+/** Termin zgłoszenia wyliczony z daty zdarzenia; kolor i treść odzwierciedlają pilność. */
 @Composable
 private fun DeadlineHint(deadline: String, daysLeft: Long) {
     val overdue = daysLeft < 0
@@ -400,7 +378,7 @@ private fun EventType.label(): String = when (this) {
     EventType.DEATH -> "Padnięcie"
 }
 
-/** Krótkie wyjaśnienie, czego dotyczy dany typ — nazwy bywają mylone. */
+/** Zwraca krótki opis rodzaju zdarzenia. */
 private fun EventType.hint(): String = when (this) {
     EventType.BIRTH -> "Urodzenie cielęcia w Twoim gospodarstwie."
     EventType.ARRIVAL -> "Zwierzę przyjechało do Ciebie z innej siedziby stada."

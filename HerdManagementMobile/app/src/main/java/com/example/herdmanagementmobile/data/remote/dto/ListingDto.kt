@@ -23,7 +23,7 @@ data class ListingDto(
     @SerialName("created_at") val createdAt: String? = null,
 )
 
-/** Body dla POST/PUT — backend sam ustala status i odznakę, więc ich nie wysyłamy. */
+/** Treść żądań POST i PUT; status i odznaka weryfikacji są ustalane przez backend. */
 @Serializable
 data class ListingWriteDto(
     @SerialName("animal_id") val animalId: Long,
@@ -45,7 +45,7 @@ data class ListingDraftDto(
     @SerialName("existing_listing_id") val existingListingId: Long? = null,
 )
 
-/** Odpowiedz POST /listings/{id}/verify — wynik porownania z rejestrem (F14). */
+/** Odpowiedź `POST /listings/{id}/verify` z wynikiem porównania z rejestrem (wymaganie F14). */
 @Serializable
 data class ListingVerificationDto(
     @SerialName("listing_id") val listingId: Long,
@@ -64,8 +64,6 @@ data class InquiryDto(
     val message: String,
     @SerialName("created_at") val createdAt: String? = null,
 )
-
-// --- Mapowanie ----------------------------------------------------------
 
 fun ListingDto.toDomain(): Listing = Listing(
     id = id,

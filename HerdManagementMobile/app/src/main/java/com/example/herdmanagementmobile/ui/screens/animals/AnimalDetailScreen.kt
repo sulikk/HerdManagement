@@ -76,18 +76,9 @@ private val dayFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.yy
 private enum class DetailTab { DANE, ZDARZENIA, LECZENIA }
 
 /**
- * Karta zwierzęcia podzielona na zakładki.
- *
- * Wcześniej wszystko leżało w jednym przewijanym `Column`: przy stu leczeniach
- * Compose budował sto wierszy naraz, a hodowca przewijał kilometr ekranu, żeby
- * dojść do historii zabiegów. Teraz każda zakładka ma własną leniwą listę
- * (renderowane jest tylko to, co widać), a pozycje są pogrupowane po latach
- * z przyklejonym nagłówkiem — przy długiej historii to jedyny sposób, żeby
- * wiedzieć, na jakiej wysokości listy się jest.
- *
- * Trwająca karencja jest pokazana nad zakładkami, niezależnie od wybranej —
- * to informacja bezpieczeństwa (mleko i mięso poza obrotem), więc nie może
- * zależeć od tego, gdzie akurat patrzy użytkownik.
+ * Karta zwierzęcia podzielona na zakładki. Zdarzenia i leczenia prezentowane są
+ * w leniwych listach pogrupowanych według lat. Ostrzeżenie o trwającej karencji
+ * jest widoczne niezależnie od wybranej zakładki.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -131,8 +122,7 @@ fun AnimalDetailScreen(
             )
         },
         floatingActionButton = {
-            // Przycisk dodawania należy do zakładki, którą widać — jeden zamiast
-            // dwóch „plusów” rozsianych po treści.
+            // Przycisk dodawania dotyczy aktywnej zakładki.
             if (animal != null && tab != DetailTab.DANE) {
                 ExtendedFloatingActionButton(
                     onClick = {
@@ -259,7 +249,7 @@ fun AnimalDetailScreen(
     }
 }
 
-/** Kolczyk i imię zostają na ekranie niezależnie od zakładki — to tożsamość sztuki. */
+/** Nagłówek karty z numerem kolczyka i imieniem, widoczny niezależnie od zakładki. */
 @Composable
 private fun IdentityHeader(state: AnimalDetailState, animal: Animal) {
     Column(
@@ -288,7 +278,6 @@ private fun IdentityHeader(state: AnimalDetailState, animal: Animal) {
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            // Grupa użytkowa zamiast samej płci: „Byczek” niesie i płeć, i wiek.
             state.ageGroup?.let { group ->
                 InfoChip(text = group.label(animal), tint = MaterialTheme.colorScheme.primary)
             }
@@ -315,7 +304,7 @@ private fun InfoChip(text: String, tint: Color) {
     )
 }
 
-/** Wiek opisowo: do dwóch lat w miesiącach, potem w latach z resztą. */
+/** Formatuje wiek: do dwóch lat w miesiącach, powyżej — w latach i miesiącach. */
 private fun formatAge(months: Long): String {
     if (months < 24) return "$months ${DeadlineText.months(months)}"
     val years = (months / 12).toInt()
@@ -327,11 +316,7 @@ private fun formatAge(months: Long): String {
     }
 }
 
-/**
- * Ostrzeżenie o trwającej karencji — widoczne zawsze, nie tylko w zakładce leczeń.
- * Mleko i mięso sztuki na karencji nie mogą trafić do obrotu, więc ta informacja
- * nie może być schowana za kliknięciem.
- */
+/** Ostrzeżenie o trwającej karencji, w czasie której mleko i mięso nie mogą trafić do obrotu. */
 @Composable
 private fun WithdrawalBanner(treatments: List<Treatment>) {
     val today = LocalDate.now()
@@ -376,8 +361,6 @@ private fun TabWithCount(label: String, count: Int?, selected: Boolean, onClick:
         },
     )
 }
-
-// --- Zakładka: dane -----------------------------------------------------
 
 @Composable
 private fun DataTab(state: AnimalDetailState, animal: Animal, onSell: () -> Unit) {
@@ -443,8 +426,6 @@ private fun DataTab(state: AnimalDetailState, animal: Animal, onSell: () -> Unit
     }
 }
 
-// --- Zakładka: zdarzenia ------------------------------------------------
-
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun EventsTab(
@@ -459,7 +440,7 @@ private fun EventsTab(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        // Zapas na dole, żeby pływający przycisk nie zasłaniał ostatniej pozycji.
+        // Margines dolny zapobiega zasłanianiu ostatniej pozycji przez przycisk FAB.
         contentPadding = PaddingValues(bottom = 88.dp),
     ) {
         events.groupBy { it.eventDate.year }.forEach { (year, inYear) ->
@@ -502,8 +483,7 @@ private fun EventRow(
             )
         }
 
-        // Dopóki zdarzenie nie jest potwierdzone, biegnie ustawowy termin —
-        // ta sama informacja co na ekranie terminów, tylko przy konkretnej sztuce.
+        // Termin ustawowy jest prezentowany do czasu potwierdzenia zgłoszenia.
         if (event.irzStatus != IrzStatus.CONFIRMED) {
             val daysLeft = ChronoUnit.DAYS.between(
                 LocalDate.now(),
@@ -535,15 +515,12 @@ private fun EventRow(
                 IrzStatus.REJECTED -> TextButton(onClick = onSubmitToIrz) { Text("Zgłoś ponownie") }
                 IrzStatus.SUBMITTED, IrzStatus.CONFIRMED -> Unit
             }
-            // Części odmów nie da się naprawić poprawką danych — wtedy jedyne wyjście
-            // to usunąć wpis. Zgłoszenie przyjęte przez rejestr zostaje ([allowsRemoval]).
+            // Usunięcie jest dostępne wyłącznie dla zgłoszeń niezapisanych w rejestrze.
             if (event.irzStatus.allowsRemoval) {
                 TextButton(onClick = onDelete) { Text("Usuń") }
             }
         }
 
-        // Komunikat rejestru ma sens przy każdym stanie poza potwierdzonym —
-        // przy odrzuceniu mówi wprost, co poprawić.
         if (event.irzStatus != IrzStatus.CONFIRMED) {
             event.irzMessage?.takeIf { it.isNotBlank() }?.let {
                 Text(
@@ -572,8 +549,6 @@ private fun EventRow(
         }
     }
 }
-
-// --- Zakładka: leczenia -------------------------------------------------
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -663,9 +638,7 @@ private fun TreatmentRow(treatment: Treatment) {
     }
 }
 
-// --- Elementy wspólne ---------------------------------------------------
-
-/** Przyklejony nagłówek roku — przy długiej historii mówi, gdzie się jest. */
+/** Przyklejony nagłówek grupy pozycji z danego roku. */
 @Composable
 private fun YearHeader(year: Int) {
     Text(
@@ -707,7 +680,7 @@ private fun DetailRow(label: String, value: String) {
     }
 }
 
-/** Nazwa grupy użytkowej dla pojedynczej sztuki. */
+/** Zwraca nazwę grupy użytkowej zwierzęcia. */
 private fun AgeGroup.label(animal: Animal): String = when (this) {
     AgeGroup.CALVES -> "Cielę"
     AgeGroup.HEIFERS -> "Jałówka"
@@ -715,7 +688,6 @@ private fun AgeGroup.label(animal: Animal): String = when (this) {
     AgeGroup.COWS -> "Krowa"
     AgeGroup.BULLS -> "Buhaj"
     AgeGroup.OTHER_SEX -> "Płeć nieokreślona"
-    // Bez daty urodzenia nie da się przypisać grupy — zostaje sama płeć.
     AgeGroup.UNKNOWN_AGE -> animal.sex.label()
 }
 

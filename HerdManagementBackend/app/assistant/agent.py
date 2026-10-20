@@ -1,11 +1,10 @@
-"""Pętla agentowa asystenta hodowcy.
+"""Pętla agentowa asystenta LLM.
 
-Model dostaje zestaw narzędzi (``tools.py``) i prowadzi rozmowę po polsku.
-Kluczowa zasada projektu: **agent proponuje — użytkownik zatwierdza**. Narzędzia
-odczytowe wykonują się od razu, a każde narzędzie zapisujące zatrzymuje pętlę i
-wraca do aplikacji jako propozycja akcji. Dopiero decyzja użytkownika
-(``resolve_pending``) wznawia rozmowę. Egzekwuje to backend, nie prompt — model
-nie ma technicznej możliwości zapisania czegokolwiek bez zgody.
+Model korzysta z zestawu narzędzi (``tools.py``) zgodnie z zasadą „agent proponuje,
+użytkownik zatwierdza”. Narzędzia odczytowe są wykonywane natychmiast, natomiast
+wywołanie narzędzia zapisującego wstrzymuje pętlę i jest zwracane aplikacji jako
+propozycja akcji. Rozmowę wznawia decyzja użytkownika (``resolve_pending``).
+Zasada jest egzekwowana przez backend, a nie przez treść promptu.
 """
 import json
 import logging
@@ -21,7 +20,7 @@ from app.assistant.llm import LlmClient
 
 logger = logging.getLogger(__name__)
 
-MAX_ITERATIONS = 8  # zabezpieczenie przed zapętleniem modelu na narzędziach
+MAX_ITERATIONS = 8  # limit iteracji chroniący przed zapętleniem wywołań narzędzi
 
 SYSTEM_PROMPT = """\
 Jesteś asystentem polskiego hodowcy bydła wbudowanym w aplikację do zarządzania stadem.
@@ -78,7 +77,7 @@ class TurnResult:
 
 
 def _attr(block: Any, name: str, default: Any = None) -> Any:
-    """Czyta pole bloku treści niezależnie od tego, czy to obiekt SDK, czy słownik."""
+    """Odczytuje pole bloku treści, obsługując zarówno obiekty SDK, jak i słowniki."""
     if isinstance(block, dict):
         return block.get(name, default)
     return getattr(block, name, default)
@@ -106,13 +105,11 @@ def _tool_result(tool_use_id: str, payload: Any, is_error: bool = False) -> dict
 
 
 class Assistant:
-    """Orkiestrator rozmowy: składa żądania do modelu i wykonuje narzędzia."""
+    """Orkiestrator rozmowy: buduje żądania do modelu i wykonuje narzędzia."""
 
     def __init__(self, llm: LlmClient, today: date | None = None) -> None:
         self._llm = llm
         self._today = today
-
-    # --- API publiczne --------------------------------------------------
 
     def send(self, db: Session, conversation: Conversation, message: str) -> TurnResult:
         if conversation.pending is not None:
@@ -165,8 +162,6 @@ class Assistant:
         result.executed = executed + result.executed
         return result
 
-    # --- Wnętrze --------------------------------------------------------
-
     def _run(self, db: Session, conversation: Conversation) -> TurnResult:
         executed: list[ExecutedAction] = []
         today = self._today or datetime.now().date()
@@ -203,7 +198,7 @@ class Assistant:
         content: Any,
         today: date,
     ) -> tuple[list[dict[str, Any]], PendingAction | None]:
-        """Wykonuje narzędzia odczytowe; pierwsze zapisujące zwraca jako propozycję."""
+        """Wykonuje narzędzia odczytowe; pierwsze narzędzie zapisujące zwraca jako propozycję."""
         results: list[dict[str, Any]] = []
         pending: PendingAction | None = None
 

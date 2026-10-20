@@ -12,13 +12,13 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./herd.db"
     cors_origins: list[str] = Field(default_factory=lambda: ["*"])
 
-    # --- Asystent LLM (Zadanie 8) ---
+    # Asystent LLM
     llm_provider: str = "anthropic"
     llm_api_key: str = ""
     llm_model: str = "claude-opus-5"
     llm_max_tokens: int = 16000
     llm_effort: str = "medium"  # low | medium | high | xhigh | max
-    # Serwerowy fallback na odmowę modelu — wymaga konta z dostępem do bety.
+    # Obsługa odmowy modelu po stronie serwera (funkcja beta).
     llm_refusal_fallback: bool = False
 
     irzplus_base_url: str = "https://epuap.gov.pl/irzplus"

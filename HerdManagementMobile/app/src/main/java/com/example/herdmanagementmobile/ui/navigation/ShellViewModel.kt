@@ -14,13 +14,8 @@ import java.time.LocalDate
 import javax.inject.Inject
 
 /**
- * Dane potrzebne samej nawigacji — na razie licznik przy sekcji „Terminy”.
- *
- * Do licznika trafia to, co wymaga reakcji: zdarzenia po ustawowym terminie 7 dni,
- * te z terminem w ciągu dwóch dni oraz wszystkie odrzucone przez rejestr —
- * odrzucenie trzeba poprawić niezależnie od tego, ile czasu zostało.
- * Zdarzenia z zapasem czasu nie są liczone: gdyby plakietka świeciła się zawsze,
- * przestałaby cokolwiek znaczyć.
+ * Dostarcza dane dla nawigacji: licznik przy sekcji „Terminy”. Obejmuje on zdarzenia
+ * po terminie, z terminem upływającym w ciągu dwóch dni oraz odrzucone przez rejestr.
  */
 @HiltViewModel
 class ShellViewModel @Inject constructor(

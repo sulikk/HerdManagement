@@ -6,10 +6,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import java.time.LocalDate
 
-/**
- * DTO odpowiadający schematowi backendu (snake_case, daty jako ISO-8601 String).
- * Mapowanie domena<->DTO w funkcjach rozszerzających na dole pliku.
- */
+/** DTO zwierzęcia zgodne ze schematem backendu (nazwy pól w snake_case, daty w formacie ISO 8601). */
 @Serializable
 data class AnimalDto(
     val id: Long = 0L,

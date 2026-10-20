@@ -68,15 +68,10 @@ import java.time.format.DateTimeFormatter
 private val dayFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy")
 
 /**
- * Terminy zgłoszeń do IRZplus.
- *
- * Ekran odpowiada na jedno pytanie: co mnie goni. Dlatego zaczyna się od
- * podsumowania liczbowego (ile zaległych, ile pilnych), a dopiero pod nim leży
- * lista pogrupowana wg pilności, z przyklejonymi nagłówkami — przy kilkudziesięciu
- * zdarzeniach trzeba wiedzieć, w której grupie się jest.
- *
- * Pilność niesie trzy nośniki naraz: kolor, ikonę i tekst. Sam kolor wykluczałby
- * osoby z zaburzeniami widzenia barw, a to informacja o terminie ustawowym.
+ * Ekran terminów zgłoszeń do IRZplus (wymaganie F10). Zawiera podsumowanie liczbowe
+ * oraz listę zdarzeń pogrupowaną według pilności. Pilność jest sygnalizowana
+ * jednocześnie kolorem, ikoną i tekstem, co zapewnia dostępność dla osób
+ * z zaburzeniami widzenia barw.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -88,7 +83,7 @@ fun ComplianceScreen(
     val state by viewModel.state.collectAsState()
     val today = LocalDate.now()
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
-    // Usunięcie zgłoszenia jest nieodwracalne, więc zawsze przez potwierdzenie.
+    // Usunięcie zgłoszenia wymaga potwierdzenia.
     var pendingDelete by remember { mutableStateOf<ComplianceItem?>(null) }
     var confirmClearRejected by remember { mutableStateOf(false) }
 
@@ -205,8 +200,6 @@ private fun TabLabel(label: String, count: Int, highlight: Boolean) {
         Text(label)
         if (count > 0) {
             Spacer(Modifier.width(6.dp))
-            // Odrzucone wyróżniamy kolorem błędu — to jedyna grupa, której nie da
-            // się załatwić samym wysłaniem.
             Badge(
                 containerColor = if (highlight) {
                     MaterialTheme.colorScheme.error
@@ -218,7 +211,7 @@ private fun TabLabel(label: String, count: Int, highlight: Boolean) {
     }
 }
 
-/** Zdarzenia czekające na wysłanie — tu liczy się wyłącznie termin. */
+/** Lista zdarzeń oczekujących na zgłoszenie. */
 @Composable
 private fun WaitingTab(
     items: List<ComplianceItem>,
@@ -252,12 +245,7 @@ private fun WaitingTab(
     }
 }
 
-/**
- * Zgłoszenia odrzucone przez rejestr.
- *
- * Termin ustawowy biegnie dalej, więc zostaje na wierszu, ale najważniejszy jest
- * tu powód odmowy — bez poprawienia danych ponowna wysyłka skończy się tak samo.
- */
+/** Lista zgłoszeń odrzuconych przez rejestr wraz z przyczyną odmowy i terminem ustawowym. */
 @Composable
 private fun RejectedTab(
     items: List<ComplianceItem>,
@@ -303,9 +291,6 @@ private fun RejectedTab(
                         color = MaterialTheme.colorScheme.onErrorContainer,
                     )
                     Spacer(Modifier.height(8.dp))
-                    // Części odmów nie da się naprawić (np. urodzenie sztuki, która jest
-                    // w rejestrze od dawna). Zostawione na liście przysłaniają pozycje,
-                    // które faktycznie czekają na poprawę.
                     TextButton(onClick = onClearAll) {
                         Icon(
                             imageVector = Icons.Default.DeleteOutline,
@@ -331,10 +316,7 @@ private fun RejectedTab(
     }
 }
 
-/**
- * Podsumowanie liczbowe na wejściu. Trzy liczby odpowiadają na pytanie „jak jest”
- * szybciej niż przewijanie listy; wykres przy trzech wartościach nic by nie wniósł.
- */
+/** Podsumowanie liczby zgłoszeń zaległych, pilnych i terminowych. */
 @Composable
 private fun Summary(overdue: Int, urgent: Int, onTime: Int) {
     Card(
@@ -480,8 +462,6 @@ private fun ComplianceRow(
                 style = MaterialTheme.typography.bodyMedium,
             )
 
-            // Tekst pilności niesie tę samą informację co ikona i kolor —
-            // żaden z tych nośników nie występuje samodzielnie.
             Text(
                 text = "${DeadlineText.timeLeft(item.daysLeft(today))} " +
                     "(termin ${item.deadline.format(dayFormat)})",
@@ -502,8 +482,7 @@ private fun ComplianceRow(
             }
         }
 
-        // Kosz tylko tam, gdzie usunięcie jest dopuszczalne — zgłoszenie przyjęte
-        // przez rejestr musi zostać w ewidencji ([allowsRemoval]).
+        // Usunięcie jest dostępne wyłącznie dla zgłoszeń niezapisanych w rejestrze.
         if (item.irzStatus.allowsRemoval) {
             IconButton(onClick = onDelete) {
                 Icon(
@@ -515,7 +494,6 @@ private fun ComplianceRow(
             }
         }
 
-        // Strzałka mówi wprost, że wiersz jest klikalny i prowadzi do karty sztuki.
         Icon(
             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
             contentDescription = null,
@@ -531,7 +509,7 @@ private fun ComplianceItem.Urgency.appearance(): Pair<ImageVector, Color> = when
     ComplianceItem.Urgency.ON_TIME -> Icons.Default.CheckCircle to MaterialTheme.colorScheme.primary
 }
 
-/** Co dalej z tym zgłoszeniem — albo `null`, gdy nic nie trzeba robić. */
+/** Zwraca wskazówkę dotyczącą dalszego postępowania lub `null`, gdy nie jest wymagane działanie. */
 private fun ComplianceItem.statusNote(): String? = when (irzStatus) {
     IrzStatus.REJECTED -> irzMessage?.let { "Odrzucone przez IRZplus: $it" }
         ?: "Odrzucone przez IRZplus — popraw dane i zgłoś ponownie."
@@ -581,7 +559,7 @@ private fun EmptyTab(
     }
 }
 
-/** Odmiana rzeczownika w podsumowaniu: „1 zgłoszenie”, „2 zgłoszenia”, „5 zgłoszeń”. */
+/** Zwraca odmianę rzeczownika „zgłoszenie” dla podanej liczby. */
 private fun zgloszenia(count: Int): String {
     val last = count % 10
     val lastTwo = count % 100

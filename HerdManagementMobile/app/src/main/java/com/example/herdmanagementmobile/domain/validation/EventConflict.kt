@@ -6,101 +6,72 @@ import com.example.herdmanagementmobile.domain.model.withoutRejected
 import java.time.LocalDate
 
 /**
- * Zdarzenie, które kłóci się z historią sztuki.
+ * Sprzeczność nowego zdarzenia z dotychczasową historią zwierzęcia.
  *
- * [conflictingDate] to data zdarzenia, które już jest w ewidencji — bez niej
- * ostrzeżenie każe hodowcy szukać po omacku, które z wcześniejszych zdarzeń
- * ma na myśli aplikacja.
+ * @property conflictingDate data istniejącego zdarzenia, z którym występuje sprzeczność;
+ *   prezentowana użytkownikowi w treści ostrzeżenia.
  */
 data class EventConflict(
     val kind: Kind,
     val conflictingDate: LocalDate,
 ) {
-    /** Czy zapis jest niemożliwy, czy tylko podejrzany — patrz [Kind.blocking]. */
+    /** Określa, czy sprzeczność uniemożliwia zapis (zob. [Kind.blocking]). */
     val blocking: Boolean get() = kind.blocking
 
     /**
      * Rodzaj sprzeczności wraz z jej wagą.
      *
-     * [blocking] jest zarezerwowane dla sprzeczności **bezwarunkowych**: urodzenie
-     * i padnięcie zdarzają się raz w życiu sztuki i żadna historia ewidencji tego nie
-     * zmieni, więc drugiego takiego zdarzenia nie da się obronić żadnym wyjaśnieniem.
-     *
-     * Pozostałe rodzaje to **wnioski** z tego, co aplikacja wie: że sztuka przyjechała,
-     * że już wyszła, że stoi w gospodarstwie. Ewidencja bywa niepełna i uzupełniana
-     * wstecz, a zdarzenie, które taki wniosek opiera, może być potwierdzone przez
-     * rejestr — a wtedy nie da się go usunąć ([com.example.herdmanagementmobile.domain.model.allowsRemoval]).
-     * Blokada w takim przypadku zakleszczałaby kartę sztuki: nie da się ani usunąć
-     * przeszkody, ani zapisać zdarzenia, które faktycznie zaszło. Dlatego tam zostaje
-     * ostrzeżenie z możliwością zapisu.
+     * Blokujące są wyłącznie sprzeczności bezwarunkowe: urodzenie i padnięcie występują
+     * jednokrotnie w życiu zwierzęcia. Pozostałe rodzaje wynikają z wnioskowania na
+     * podstawie ewidencji, która może być niepełna, a zdarzenia potwierdzone w rejestrze
+     * nie mogą zostać usunięte
+     * ([com.example.herdmanagementmobile.domain.model.allowsRemoval]). W tych przypadkach
+     * zgłaszane jest ostrzeżenie, a decyzja o zapisie należy do użytkownika.
      */
     enum class Kind(val blocking: Boolean) {
-        /** Urodzenie zdarza się raz w życiu sztuki — drugiego nie ma jak uzasadnić. */
+        /** Zwierzę ma już zarejestrowane urodzenie. */
         ALREADY_BORN(blocking = true),
 
-        /** Sztuka przyjechała z innej siedziby, więc nie urodziła się tutaj. */
+        /** Zwierzę przybyło z innej siedziby stada, więc nie urodziło się w gospodarstwie. */
         ALREADY_ARRIVED(blocking = false),
 
-        /** Padnięcie zdarza się raz w życiu sztuki. */
+        /** Zwierzę ma już zarejestrowane padnięcie. */
         ALREADY_DEAD(blocking = true),
 
-        /** Sztuka jest już rozliczona jako ubyła albo padła. */
+        /** Zwierzę zostało już rozliczone jako ubyłe lub padłe. */
         ALREADY_LEFT(blocking = false),
 
-        /** Sztuka już stoi w gospodarstwie, więc nie może do niego przybyć. */
+        /** Zwierzę znajduje się w gospodarstwie, więc nie może do niego przybyć. */
         ALREADY_IN_HERD(blocking = false),
     }
 }
 
 /**
- * Wykrywa zdarzenia sprzeczne z tym, co już wiadomo o sztuce.
+ * Wykrywa zdarzenia sprzeczne z dotychczasową historią zwierzęcia.
  *
- * **Model.** Zdarzenia dzielą się na wejścia (urodzenie, przybycie) i wyjścia
- * (ubycie, padnięcie) i muszą się przeplatać: sztuka nie wchodzi do gospodarstwa
- * dwa razy z rzędu ani nie wychodzi z niego dwa razy z rzędu. Dlatego urodzenie
- * i przybycie wykluczają się wzajemnie — sztuka albo urodziła się u hodowcy, albo
- * do niego przyjechała. Ubycie i padnięcie wykluczają się tak samo.
+ * Zdarzenia dzielą się na wejścia (urodzenie, przybycie) i wyjścia (ubycie, padnięcie),
+ * które muszą występować naprzemiennie. Sekwencja `przybycie → ubycie → przybycie` jest
+ * poprawna, natomiast urodzenie i padnięcie mogą wystąpić tylko raz, a urodzenie musi
+ * być pierwszym zdarzeniem w historii.
  *
- * Nie znaczy to jednak „tylko raz w ogóle”: sztuka może ubyć i wrócić (niedoszła
- * sprzedaż, powrót z targu czy z pastwiska), więc `przybycie → ubycie → przybycie`
- * jest poprawne i rejestr to przyjmie. Blokowanie drugiego przybycia na zawsze
- * uniemożliwiłoby zapisanie takiego obrotu.
- *
- * Wyjątkiem są urodzenie i padnięcie — te zdarzają się raz w życiu sztuki,
- * niezależnie od tego, co było później. Urodzenie jest przy tym zawsze pierwszym
- * zdarzeniem w historii, więc kłóci się z każdym wcześniejszym wpisem.
- *
- * **Waga sprzeczności.** Drugie urodzenie i drugie padnięcie są niemożliwe
- * bezwarunkowo, więc tych dwu formularz nie zapisze ([EventConflict.Kind.blocking]).
- * Reszta to wnioski z ewidencji, która bywa niepełna i uzupełniana wstecz — tam
- * aplikacja ostrzega, ale ostatnie słowo ma hodowca. Zadanie ostrzeżenia jest wąskie:
- * powiedzieć o odmowie, zanim rejestr ją wystawi.
- *
- * Odrzucone zgłoszenia nie wchodzą do rachunku ([withoutRejected]): skoro rejestr
- * ich nie przyjął, nic się nie stało i nie mogą blokować poprawnego wpisu — właśnie
- * po to hodowca poprawia odrzucone zgłoszenie i wysyła je jeszcze raz.
+ * Zgłoszenia odrzucone przez IRZplus są pomijane ([withoutRejected]), ponieważ nie
+ * zmieniły stanu rejestru i nie mogą blokować zapisu poprawionego zdarzenia.
  */
 object EventConflicts {
 
-    /**
-     * Zdarzenia wprowadzające sztukę do gospodarstwa. Dopełnieniem są wyjścia
-     * (ubycie, padnięcie), więc jeden zbiór wystarczy do rozstrzygnięcia obu stron.
-     */
+    /** Zdarzenia wprowadzające zwierzę do gospodarstwa; pozostałe typy są wyjściami. */
     private val ENTRY = setOf(EventType.BIRTH, EventType.ARRIVAL)
 
     fun detect(type: EventType, existing: List<AnimalEvent>): EventConflict? {
         val actual = existing.withoutRejected()
         if (actual.isEmpty()) return null
 
-        // Kolejność po dacie, a przy równej dacie po id — tak samo jak w statystykach,
-        // inaczej „ostatnie zdarzenie” znaczyłoby w obu miejscach coś innego.
+        // Porządek zgodny z HerdStatistics: data zdarzenia, a przy równych datach identyfikator.
         val last = actual.maxWith(compareBy({ it.eventDate }, { it.id }))
         val inHerd = last.type in ENTRY
 
         return when (type) {
-            // Urodzenie jest pierwszym zdarzeniem w historii sztuki, więc kłóci się
-            // z każdym wpisem, jaki już jest. Rozróżniamy tylko powód, żeby komunikat
-            // mówił hodowcy coś konkretnego.
+            // Urodzenie musi być pierwszym zdarzeniem; rodzaj sprzeczności określa treść komunikatu.
             EventType.BIRTH -> {
                 val born = actual.lastOfType(EventType.BIRTH)
                 when {
@@ -110,8 +81,7 @@ object EventConflicts {
                 }
             }
 
-            // Przybycie po ubyciu jest poprawne (sztuka wraca), więc liczy się tylko to,
-            // czy wedle ewidencji sztuka już stoi w gospodarstwie.
+            // Przybycie po ubyciu jest dopuszczalne (powrót zwierzęcia).
             EventType.ARRIVAL ->
                 if (inHerd) conflict(EventConflict.Kind.ALREADY_IN_HERD, last) else null
 
@@ -122,8 +92,7 @@ object EventConflicts {
                 val dead = actual.lastOfType(EventType.DEATH)
                 when {
                     dead != null -> conflict(EventConflict.Kind.ALREADY_DEAD, dead)
-                    // Sztuka wyprowadzona z gospodarstwa nie może w nim padnąć —
-                    // padnięcie zgłasza wtedy jej nowy posiadacz.
+                    // Padnięcie zwierzęcia po ubyciu zgłasza jego nowy posiadacz.
                     !inHerd -> conflict(EventConflict.Kind.ALREADY_LEFT, last)
                     else -> null
                 }

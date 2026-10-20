@@ -27,7 +27,7 @@ class AnimalRead(AnimalBase):
 
 
 class IrzResult(BaseModel):
-    """Stan zgłoszenia zdarzenia do IRZplus — ustala aplikacja mobilna po odpowiedzi IRZ."""
+    """Wynik zgłoszenia zdarzenia do IRZplus, ustalany przez aplikację mobilną."""
 
     irz_status: IrzStatus = IrzStatus.PENDING
     irz_submitted_at: datetime | None = None
@@ -87,8 +87,6 @@ class MeasurementRead(MeasurementBase):
     id: int
 
 
-# --- Ogłoszenia sprzedażowe (zadanie 9) ---------------------------------
-
 class ListingBase(BaseModel):
     animal_id: int
     price: float = Field(gt=0, description="Cena wywoławcza w złotych.")
@@ -101,8 +99,7 @@ class ListingCreate(ListingBase):
 
 
 class ListingUpdate(BaseModel):
-    """Edycja treści ogłoszenia. Statusu i odznaki nie da się tu podmienić —
-    zmienia je wyłącznie ``/publish`` i ``/verify``."""
+    """Edycja treści ogłoszenia; status i odznakę zmieniają wyłącznie ``/publish`` i ``/verify``."""
 
     price: float = Field(gt=0)
     description: str | None = Field(default=None, max_length=2000)
@@ -122,11 +119,7 @@ class ListingRead(ListingBase):
 
 
 class ListingDraft(BaseModel):
-    """Dane karty zwierzęcia do wstępnego wypełnienia formularza ogłoszenia (F13).
-
-    Hodowca nie przepisuje kolczyka, rasy ani daty urodzenia — pola przychodzą
-    z tego samego rekordu, który zasila zgłoszenia do IRZplus.
-    """
+    """Dane karty zwierzęcia do wstępnego wypełnienia formularza ogłoszenia (wymaganie F13)."""
 
     animal_id: int
     ear_tag: str
@@ -143,7 +136,7 @@ class ListingDraft(BaseModel):
 
 
 class ListingVerification(BaseModel):
-    """Wynik sprawdzenia ogłoszenia wobec rejestru IRZplus (F14)."""
+    """Wynik weryfikacji ogłoszenia w rejestrze IRZplus (wymaganie F14)."""
 
     listing_id: int
     irz_verified: bool
@@ -170,10 +163,8 @@ class InquiryRead(InquiryBase):
     updated_at: datetime | None = None
 
 
-# --- Synchronizacja przyrostowa (N5) ------------------------------------
-
 class DeletionRead(BaseModel):
-    """Informacja, że rekord o tym identyfikatorze przestał istnieć na serwerze."""
+    """Znacznik usunięcia rekordu po stronie serwera."""
 
     model_config = ConfigDict(from_attributes=True)
     entity: str = Field(description="animal | event | treatment")
@@ -182,11 +173,10 @@ class DeletionRead(BaseModel):
 
 
 class SyncChanges(BaseModel):
-    """Odpowiedź ``GET /sync/changes`` — tylko to, co zmieniło się od ``since``.
+    """Odpowiedź ``GET /sync/changes`` zawierająca zmiany od ``since``.
 
-    ``server_time`` aplikacja mobilna zapisuje u siebie i podaje jako ``since``
-    w kolejnym zapytaniu. Bierzemy czas serwera, a nie telefonu, żeby rozjechany
-    zegar urządzenia nie gubił rekordów.
+    Wartość ``server_time`` jest przekazywana przez aplikację jako ``since`` w kolejnym
+    zapytaniu, co uniezależnia synchronizację od zegara urządzenia.
     """
 
     server_time: datetime

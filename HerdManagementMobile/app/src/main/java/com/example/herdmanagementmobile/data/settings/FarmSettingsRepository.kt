@@ -20,9 +20,9 @@ data class FarmSettings(
 private val Context.farmDataStore by preferencesDataStore(name = "farm_settings")
 
 /**
- * Przechowuje numer producenta i numer siedziby stada w DataStore.
- * Wartości używane jako domyślne dla zwierząt i jako poświadczenia/parametry
- * zgłoszeń do IRZplus. Wartości startowe są demonstracyjne (działają z mockiem).
+ * Przechowuje numer producenta i numer siedziby stada. Wartości są używane jako dane
+ * domyślne zwierząt oraz parametry zgłoszeń do IRZplus. Wartości początkowe są
+ * demonstracyjne i zgodne z danymi symulatora.
  */
 @Singleton
 class FarmSettingsRepository @Inject constructor(

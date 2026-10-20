@@ -19,10 +19,7 @@ import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
 
-/**
- * Klient REST backendu Herd Management (FastAPI).
- * Ścieżki odpowiadają routerom: animals, events, treatments.
- */
+/** Interfejs REST backendu aplikacji (FastAPI). */
 interface HerdApiService {
 
     @GET("animals")
@@ -67,17 +64,11 @@ interface HerdApiService {
     @DELETE("treatments/{id}")
     suspend fun deleteTreatment(@Path("id") id: Long)
 
-    /**
-     * Zmiany na backendzie od znacznika [since] (pusty = pełna migawka).
-     * Źródło danych, których telefon sam nie wprowadził: wpisy asystenta LLM,
-     * poprawki zrobione w backendzie, dane z innego urządzenia.
-     */
+    /** Pobiera zmiany od znacznika [since]; brak znacznika oznacza pełną migawkę. */
     @GET("sync/changes")
     suspend fun getChanges(@Query("since") since: String? = null): SyncChangesDto
 
-    // --- Ogłoszenia sprzedażowe (zadanie 9) ---------------------------
-
-    /** Dane karty zwierzęcia do wstępnego wypełnienia formularza (F13). */
+    /** Pobiera dane karty zwierzęcia do wstępnego wypełnienia formularza (wymaganie F13). */
     @GET("animals/{animalId}/listing-draft")
     suspend fun getListingDraft(@Path("animalId") animalId: Long): ListingDraftDto
 
@@ -87,7 +78,7 @@ interface HerdApiService {
     @PUT("listings/{id}")
     suspend fun updateListing(@Path("id") id: Long, @Body body: ListingWriteDto): ListingDto
 
-    /** Jawna publikacja — wymaganie F12. */
+    /** Publikuje ogłoszenie (wymaganie F12). */
     @POST("listings/{id}/publish")
     suspend fun publishListing(@Path("id") id: Long): ListingDto
 
@@ -97,7 +88,7 @@ interface HerdApiService {
     @POST("listings/{id}/sold")
     suspend fun markListingSold(@Path("id") id: Long): ListingDto
 
-    /** Weryfikacja wobec rejestru IRZplus — nadaje odznakę (F14). */
+    /** Weryfikuje ogłoszenie w rejestrze IRZplus (wymaganie F14). */
     @POST("listings/{id}/verify")
     suspend fun verifyListing(@Path("id") id: Long): ListingVerificationDto
 

@@ -24,12 +24,7 @@ import java.time.format.DateTimeFormatter
 
 val dayFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy")
 
-/**
- * Sekcja z tytułem i opcjonalnym wyjaśnieniem.
- *
- * Wspólna dla formularzy i ekranów szczegółów — płaska lista pól nie mówi,
- * co jest obowiązkowe, a co uzupełnia się przy okazji.
- */
+/** Sekcja formularza lub ekranu szczegółów z tytułem i opcjonalnym opisem. */
 @Composable
 fun SectionCard(
     title: String,
@@ -63,12 +58,7 @@ fun SectionCard(
     }
 }
 
-/**
- * Pole daty: wygląda jak reszta formularza, a otwiera kalendarz.
- *
- * Wcześniej daty wybierało się przyciskiem wstawionym między pola tekstowe —
- * odstawało wizualnie i nie było widać, że to też jest wartość formularza.
- */
+/** Pole daty o wyglądzie pola tekstowego, otwierające okno wyboru daty. */
 @Composable
 fun DateField(
     label: String,

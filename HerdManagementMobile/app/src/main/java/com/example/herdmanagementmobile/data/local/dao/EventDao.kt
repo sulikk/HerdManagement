@@ -40,7 +40,7 @@ interface EventDao {
         submittedAt: String?,
     )
 
-    /** Zdarzenia jeszcze niepotwierdzone przez IRZplus — kandydaci do widoku zgodności. */
+    /** Zwraca zdarzenia niepotwierdzone przez IRZplus wraz z danymi zwierzęcia. */
     @Query(
         "SELECT e.id AS eventId, e.animalId AS animalId, a.earTag AS earTag, " +
             "a.name AS animalName, e.type AS type, e.eventDate AS eventDate, " +

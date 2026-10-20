@@ -54,15 +54,9 @@ import java.time.LocalDate
 import java.time.ZoneOffset
 
 /**
- * Formularz dodawania i edycji zwierzęcia.
- *
- * Pola są pogrupowane tematycznie, bo płaska lista dziesięciu kontrolek nie mówi,
- * co jest obowiązkowe, a co uzupełnia się przy okazji. Skanowanie jest przy polu,
- * które wypełnia — zarówno dla kolczyka zwierzęcia, jak i matki — więc nie trzeba
- * się domyślać, dokąd trafi odczyt.
- *
- * Przycisk zapisu siedzi w dolnym pasku: formularz jest dłuższy niż ekran, a zapis
- * musi być osiągalny bez przewijania na sam dół.
+ * Formularz dodawania i edycji zwierzęcia. Pola pogrupowano tematycznie, a akcje
+ * skanowania umieszczono bezpośrednio przy polach, które wypełniają. Przycisk zapisu
+ * znajduje się w dolnym pasku, dostępnym bez przewijania.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -159,9 +153,7 @@ fun AnimalFormScreen(
                                 )
                             }
                             IconButton(onClick = {
-                                // Cel ustawiamy też tutaj: gdyby użytkownik wcześniej
-                                // poprosił o skan matki i anulował skaner, odczyt NFC
-                                // trafiłby do niewłaściwego pola.
+                                // Ustawienie celu zapobiega przypisaniu odczytu NFC do pola matki.
                                 viewModel.onScanRequested(ScanTarget.EAR_TAG)
                                 onNfcClick()
                             }) {
@@ -230,8 +222,6 @@ fun AnimalFormScreen(
                         capitalization = KeyboardCapitalization.Characters,
                     ),
                     trailingIcon = {
-                        // Matka ma ten sam zestaw sposobów odczytu co zwierzę —
-                        // kolczyk elektroniczny nosi tak samo i stoi zwykle obok.
                         Row {
                             IconButton(onClick = {
                                 viewModel.onScanRequested(ScanTarget.MOTHER)
@@ -289,8 +279,6 @@ fun AnimalFormScreen(
                 ?.atStartOfDay(ZoneOffset.UTC)
                 ?.toInstant()
                 ?.toEpochMilli(),
-            // Zwierzę nie może urodzić się jutro — blokujemy to już w kalendarzu,
-            // zamiast dopiero przy zapisie.
             selectableDates = PastOrToday,
         )
         DatePickerDialog(

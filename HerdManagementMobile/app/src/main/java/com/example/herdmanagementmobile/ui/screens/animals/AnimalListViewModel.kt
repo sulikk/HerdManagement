@@ -20,14 +20,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-/**
- * Stan synchronizacji widoczny na liście zwierząt — w obie strony.
- *
- * Sama kolejka wysyłkowa ([pending], [failed]) nie wystarczy: można mieć wszystko
- * wysłane i jednocześnie nie mieć ani jednego rekordu z serwera. Taki telefon
- * pokazywał „Zsynchronizowano”, choć stado na ekranie i w ewidencji było różne,
- * więc stan pobierania ([pull]) jest tu równoprawny.
- */
+/** Stan synchronizacji w obu kierunkach: kolejka wysyłkowa ([pending], [failed]) i pobieranie ([pull]). */
 data class SyncStatus(
     val pending: Int = 0,
     val failed: Int = 0,
@@ -35,10 +28,9 @@ data class SyncStatus(
 )
 
 /**
- * Widok stada: wynik filtrowania wraz z licznikami.
+ * Stan listy zwierząt po filtrowaniu.
  *
- * [total] to liczebność całego stada — bez niej hodowca nie wie, czy pusta lista
- * oznacza brak zwierząt, czy zbyt wąskie wyszukiwanie.
+ * @property total liczebność całego stada, niezależnie od filtra.
  */
 data class AnimalListState(
     val animals: List<Animal> = emptyList(),
@@ -72,7 +64,7 @@ class AnimalListViewModel @Inject constructor(
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AnimalListState())
 
-    /** Operacje czekające na wysłanie, te nieudane oraz wynik pobierania z serwera. */
+    /** Stan kolejki wysyłkowej oraz wynik pobierania zmian z serwera. */
     val syncStatus: StateFlow<SyncStatus> = combine(
         syncManager.observePendingCount(),
         syncManager.observeFailedCount(),
@@ -84,10 +76,9 @@ class AnimalListViewModel @Inject constructor(
 
     fun clearQuery() = query.update { "" }
 
-    /** Ten sam wybór odwraca kierunek, inny — przełącza kryterium. */
     fun onSortSelected(field: AnimalSortField) = sort.update { it.select(field) }
 
-    /** Ręczna synchronizacja: ponawia nieudane wpisy i wysyła kolejkę od razu. */
+    /** Wyzwala synchronizację ręczną, ponawiając również nieudane wpisy. */
     fun syncNow() {
         viewModelScope.launch { syncManager.syncNow() }
     }

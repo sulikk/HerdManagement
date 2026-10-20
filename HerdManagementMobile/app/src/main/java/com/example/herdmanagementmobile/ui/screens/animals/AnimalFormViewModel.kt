@@ -19,7 +19,7 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import javax.inject.Inject
 
-/** Pole, które ma wypełnić wynik skanowania. */
+/** Pole formularza, do którego trafia wynik skanowania. */
 enum class ScanTarget { EAR_TAG, MOTHER }
 
 data class AnimalFormState(
@@ -69,7 +69,7 @@ class AnimalFormViewModel @Inject constructor(
                 }
             }
         } else {
-            // Domyślna siedziba stada z ustawień gospodarstwa (można nadpisać w polu).
+            // Domyślna siedziba stada pochodzi z ustawień gospodarstwa.
             viewModelScope.launch {
                 val default = farmSettings.current().holdingNumber
                 _state.update { if (it.herdId.isBlank()) it.copy(herdId = default) else it }
@@ -89,18 +89,14 @@ class AnimalFormViewModel @Inject constructor(
         _state.update { it.copy(motherEarTag = value.uppercase(), motherError = null) }
 
     /**
-     * Zapamiętuje, które pole czeka na wynik skanowania.
-     *
-     * Skaner jest jednym ekranem dla obu kolczyków — bez tej informacji wynik
-     * zawsze trafiałby do numeru zwierzęcia, także gdy użytkownik skanował matkę.
-     * Trzymamy to w [SavedStateHandle], żeby przetrwało zabicie procesu w tle
-     * (aparat potrafi być pamięciożerny).
+     * Zapamiętuje pole oczekujące na wynik skanowania. Wartość przechowywana jest
+     * w [SavedStateHandle], dzięki czemu przetrwa zakończenie procesu w tle.
      */
     fun onScanRequested(target: ScanTarget) {
         handle[SCAN_TARGET_KEY] = target.name
     }
 
-    /** Wynik skanowania trafia do pola, które o niego poprosiło. */
+    /** Przypisuje wynik skanowania do pola, które go zażądało. */
     fun onScanned(value: String) {
         val target = handle.get<String>(SCAN_TARGET_KEY)
             ?.let { runCatching { ScanTarget.valueOf(it) }.getOrNull() }
@@ -134,8 +130,7 @@ class AnimalFormViewModel @Inject constructor(
             _state.update { it.copy(birthDateError = "Data urodzenia nie może być z przyszłości.") }
             return
         }
-        // Błąd kolczyka matki pokazujemy pod jego polem, nie w zbiorczym komunikacie
-        // na dole formularza — inaczej trzeba szukać, czego dotyczy.
+        // Błąd kolczyka matki jest prezentowany bezpośrednio pod jego polem.
         if (s.motherEarTag.isNotBlank() && !EarTag.isValidFormat(s.motherEarTag)) {
             _state.update { it.copy(motherError = "Format: PL + 12 cyfr") }
             return
@@ -157,7 +152,7 @@ class AnimalFormViewModel @Inject constructor(
                 it.copy(isSaving = true, saveError = null, earTagError = null, motherError = null)
             }
 
-            // Walidacja unikalności kolczyka — czytelny komunikat zamiast wyjątku z bazy.
+            // Weryfikacja unikalności kolczyka przed zapisem do bazy.
             val existing = repository.getByEarTag(s.earTag)
             if (existing != null && existing.id != animalId) {
                 _state.update {

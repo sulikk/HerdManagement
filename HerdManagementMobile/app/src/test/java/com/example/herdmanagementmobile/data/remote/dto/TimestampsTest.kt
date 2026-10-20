@@ -8,14 +8,10 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 
 /**
- * Konwersja znaczników czasu między backendem (UTC) a telefonem (czas lokalny).
+ * Testy konwersji znaczników czasu między backendem (UTC) a urządzeniem (czas lokalny).
  *
- * Testy pilnują realnego błędu: data zatwierdzenia ogłoszenia w IRZplus pokazywała
- * się o dwie godziny wcześniej, bo napis `2026-09-21T13:41:50` z backendu oznacza
- * godzinę UTC, a aplikacja traktowała go jak czas lokalny.
- *
- * Asercje liczą oczekiwany wynik przez [ZoneId.systemDefault], więc test jest
- * poprawny niezależnie od strefy maszyny, na której się uruchamia.
+ * Oczekiwane wartości są wyznaczane za pomocą [ZoneId.systemDefault], dzięki czemu
+ * wynik nie zależy od strefy czasowej środowiska testowego.
  */
 class TimestampsTest {
 
@@ -40,7 +36,7 @@ class TimestampsTest {
 
     @Test
     fun `znacznik z jawnym przesunieciem strefowym zachowuje ten sam moment`() {
-        // 15:41+02:00 to ten sam moment co 13:41 UTC.
+        // 15:41+02:00 oznacza ten sam moment co 13:41 UTC.
         assertEquals(
             expectedLocal("2026-09-21T13:41:50Z"),
             "2026-09-21T15:41:50+02:00".utcToLocal(),
@@ -71,7 +67,7 @@ class TimestampsTest {
 
     @Test
     fun `konwersja tam i z powrotem nie przesuwa czasu`() {
-        // To był sedno błędu: wysyłany czas lokalny wracał powiększony o offset.
+        // Konwersja w obie strony musi zachować pierwotną wartość.
         val local = LocalDateTime.of(2026, 6, 15, 9, 30, 0)
         assertEquals(local, local.localToUtc().utcToLocal())
     }

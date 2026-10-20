@@ -71,13 +71,8 @@ import kotlinx.coroutines.delay
 private val SCRIM = Color.Black.copy(alpha = 0.6f)
 
 /**
- * Skaner kodu z kolczyka.
- *
- * Dwie rzeczy, które decydują o tym, czy ekran jest użyteczny w oborze:
- * latarka (kolczyk rzadko bywa w dobrym świetle) i informacja zwrotna przy
- * nieudanym odczycie. Wcześniej kod z błędną cyfrą kontrolną był po cichu
- * pomijany — użytkownik celował w kolczyk i nie wiedział, dlaczego nic się
- * nie dzieje.
+ * Skaner kodu kreskowego kolczyka (wymaganie F4) z obsługą latarki i komunikatem
+ * o nieudanym odczycie, np. przy niepoprawnej cyfrze kontrolnej.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -109,8 +104,7 @@ fun ScannerScreen(
     var detected by remember { mutableStateOf(false) }
     var rejected by remember { mutableStateOf<String?>(null) }
 
-    // Komunikat o nieudanym odczycie znika sam — przy kolejnej klatce i tak
-    // pojawi się na nowo, a wiszący na stałe zasłaniałby obraz.
+    // Komunikat o nieudanym odczycie jest ukrywany automatycznie.
     LaunchedEffect(rejected) {
         if (rejected != null) {
             delay(2500)
@@ -184,8 +178,7 @@ fun ScannerScreen(
                         detected = true
                         onScanned(parsed)
                     } else {
-                        // Rozróżniamy: „to nie jest kolczyk” od „kolczyk, ale
-                        // odczyt się nie zgadza” — to różne problemy dla hodowcy.
+                        // Rozróżnienie nierozpoznanego formatu od błędnej cyfry kontrolnej.
                         rejected = if (parsed == null) {
                             "Odczytano kod, ale to nie jest numer kolczyka."
                         } else {
@@ -199,12 +192,7 @@ fun ScannerScreen(
     }
 }
 
-/**
- * Przyciemnione otoczenie z jasnym okienkiem celowniczym.
- *
- * Sam prostokąt narysowany na podglądzie ginął na tle obory; przyciemnienie
- * reszty kadru prowadzi wzrok tam, gdzie ma trafić kod.
- */
+/** Nakładka przyciemniająca podgląd kamery z wyróżnionym obszarem skanowania. */
 @Composable
 private fun ViewfinderOverlay(message: String?) {
     Column(modifier = Modifier.fillMaxSize()) {
@@ -307,8 +295,7 @@ private fun PermissionPrompt(
         Spacer(Modifier.height(24.dp))
         Button(onClick = onRequest) { Text("Udziel dostępu") }
 
-        // Po odmowie systemowe okno może się już nie pokazać — wtedy jedyną drogą
-        // są ustawienia aplikacji.
+        // Po odmowie uprawnienie można nadać wyłącznie w ustawieniach systemowych.
         if (askedOnce) {
             TextButton(onClick = onOpenSettings) { Text("Otwórz ustawienia aplikacji") }
         }

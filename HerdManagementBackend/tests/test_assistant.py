@@ -1,9 +1,8 @@
-"""Testy asystenta LLM (Zadanie 8).
+"""Testy asystenta LLM.
 
-Model jest podmieniony na atrapę (``FakeLlm``) odtwarzającą kolejne odpowiedzi
-Messages API, więc testy nie wychodzą do sieci i nie kosztują tokenów.
-Sprawdzamy to, co jest logiką backendu: wykonywanie narzędzi, politykę
-potwierdzania akcji zapisujących i kontrakt REST.
+Model jest zastąpiony atrapą (``FakeLlm``) odtwarzającą zaplanowane odpowiedzi
+Messages API, dzięki czemu testy nie korzystają z sieci. Weryfikowane są: wykonywanie
+narzędzi, polityka potwierdzania akcji zapisujących oraz kontrakt REST.
 """
 from datetime import date, timedelta
 from typing import Any
@@ -21,8 +20,6 @@ from main import app
 
 TODAY = date(2026, 9, 21)
 
-
-# --- Atrapa modelu ------------------------------------------------------
 
 class FakeResponse:
     def __init__(self, content: list[dict[str, Any]], stop_reason: str) -> None:
@@ -56,11 +53,9 @@ def tool_response(name: str, params: dict[str, Any], tool_use_id: str = "tu_1", 
     return FakeResponse(content, "tool_use")
 
 
-# --- Fikstury -----------------------------------------------------------
-
 @pytest.fixture
 def db(client: TestClient):
-    """Sesja do bazy testowej — ta sama, z której korzystają endpointy."""
+    """Sesja bazy testowej współdzielona z endpointami."""
     generator = app.dependency_overrides[get_db]()
     session = next(generator)
     try:
@@ -71,7 +66,7 @@ def db(client: TestClient):
 
 @pytest.fixture(autouse=True)
 def fresh_conversations(monkeypatch: pytest.MonkeyPatch) -> ConversationStore:
-    """Świeży rejestr rozmów dla każdego testu (izolacja stanu w pamięci)."""
+    """Nowy rejestr rozmów dla każdego testu (izolacja stanu w pamięci)."""
     fresh = ConversationStore()
     monkeypatch.setattr("app.assistant.conversation.store", fresh)
     monkeypatch.setattr("app.assistant.agent.store", fresh)
@@ -92,8 +87,6 @@ def seed_animal(db, ear_tag: str = "PL005338887002", birth: date = date(2023, 4,
         ),
     )
 
-
-# --- Narzędzia odczytowe ------------------------------------------------
 
 def test_lista_zwierzat_filtruje_po_fragmencie(db):
     seed_animal(db)
@@ -168,7 +161,7 @@ def test_statystyki_pomijaja_sztuki_ktore_ubyly(db):
     assert wynik["liczba_w_ewidencji"] == 2
     assert wynik["liczba_w_stadzie"] == 1
     assert wynik["wg_plci"] == {"samica": 1}
-    assert zostaje.ear_tag  # sztuka pozostająca w stadzie
+    assert zostaje.ear_tag  # zwierzę pozostające w stadzie
 
 
 def test_aktywne_karencje_pomijaja_zakonczone(db):
@@ -194,8 +187,6 @@ def test_aktywne_karencje_pomijaja_zakonczone(db):
     assert wynik["karencje"][0]["lek"] == "Bieżąca kuracja"
     assert wynik["karencje"][0]["dni_do_konca_karencji"] == 5
 
-
-# --- Walidacja narzędzi zapisujących ------------------------------------
 
 def test_dodaj_zwierze_odrzuca_zly_numer(db):
     with pytest.raises(tools.ToolError, match="PL \\+ 12 cyfr"):
@@ -256,8 +247,6 @@ def test_dodaj_leczenie_zapisuje_karencje(db):
     assert len(crud.list_treatments(db, animal.id)) == 1
 
 
-# --- Pętla agentowa i polityka potwierdzania ----------------------------
-
 def test_narzedzie_odczytowe_wykonuje_sie_bez_pytania(db, fresh_conversations):
     seed_animal(db)
     llm = FakeLlm([
@@ -272,7 +261,7 @@ def test_narzedzie_odczytowe_wykonuje_sie_bez_pytania(db, fresh_conversations):
     assert wynik.pending is None
     assert wynik.reply == "W stadzie jest 1 sztuka."
     assert conversation.pending is None
-    # wynik narzędzia wrócił do modelu jako tool_result
+    # Wynik narzędzia został przekazany modelowi jako tool_result.
     ostatnie_zadanie = llm.requests[-1]["messages"]
     assert ostatnie_zadanie[-1]["content"][0]["type"] == "tool_result"
 
@@ -289,7 +278,7 @@ def test_akcja_zapisujaca_czeka_na_potwierdzenie(db, fresh_conversations):
     assert wynik.pending is not None
     assert wynik.pending.name == "dodaj_zwierze"
     assert "PL005338887015" in wynik.pending.description
-    # nic nie trafiło do bazy przed decyzją użytkownika
+    # Przed decyzją użytkownika baza pozostaje niezmieniona.
     assert crud.get_animal_by_ear_tag(db, "PL005338887015") is None
 
 
@@ -326,7 +315,7 @@ def test_odrzucenie_nie_zapisuje_niczego(db, fresh_conversations):
 
     assert crud.get_animal_by_ear_tag(db, "PL005338887015") is None
     assert wynik.executed[0].approved is False
-    # model dostał informację o odmowie i komentarz użytkownika
+    # Model otrzymał informację o odmowie wraz z komentarzem użytkownika.
     ostatnia_wiadomosc = llm.requests[-1]["messages"][-1]["content"]
     assert ostatnia_wiadomosc[0]["type"] == "tool_result"
     assert "zła data" in ostatnia_wiadomosc[-1]["text"]
@@ -375,11 +364,9 @@ def test_druga_wiadomosc_przed_decyzja_jest_blokowana(db, fresh_conversations):
         assistant.send(db, conversation, "A przy okazji ile mam krów?")
 
 
-# --- Kontrakt REST ------------------------------------------------------
-
 @pytest.fixture
 def fake_llm_app(client: TestClient):
-    """Podpina atrapę modelu pod endpointy; test wypełnia listę odpowiedzi."""
+    """Podłącza atrapę modelu do endpointów; test definiuje listę odpowiedzi."""
     llm = FakeLlm([])
     app.dependency_overrides[get_assistant] = lambda: Assistant(llm, today=TODAY)
     yield llm
@@ -455,11 +442,7 @@ def test_chat_bez_klucza_zwraca_503(client: TestClient, monkeypatch: pytest.Monk
 
 
 def test_grupy_uzytkowe_rozrozniaja_plec_powyzej_wieku_cielecego():
-    """Spójność z ekranem statystyk: roczny samiec to byczek, nie „młodzież”.
-
-    Asystent i statystyki opisują to samo stado, więc muszą używać tego samego
-    podziału — inaczej te same zwierzęta liczą się inaczej w dwóch miejscach.
-    """
+    """Podział na grupy wiekowo-płciowe jest zgodny ze statystykami aplikacji mobilnej."""
     from datetime import date
 
     from app.assistant.tools import _age_group
@@ -477,12 +460,9 @@ def test_grupy_uzytkowe_rozrozniaja_plec_powyzej_wieku_cielecego():
 
 
 def test_odrzucone_ubycie_nie_wyprowadza_sztuki_ze_stada(db):
-    """Zgłoszenie odrzucone przez rejestr nie zmienia obrazu stada.
+    """Zgłoszenie ubycia odrzucone przez rejestr nie zmienia stanu stada.
 
-    Hodowca może zgłosić ubycie dwa razy — drugie odbije się od IRZplus, bo sztuka
-    jest już tam rozliczona. Dopóki `_last_event` liczyło także odrzucone, asystent
-    meldował, że żywa sztuka opuściła gospodarstwo, i rozchodził się ze statystykami
-    w aplikacji (`HerdStatistics.isInHerd` stosuje ten sam warunek).
+    Warunek jest zgodny z ``HerdStatistics.isInHerd`` w aplikacji mobilnej.
     """
     animal = seed_animal(db)
     event = crud.create_event(
@@ -504,5 +484,5 @@ def test_odrzucone_ubycie_nie_wyprowadza_sztuki_ze_stada(db):
         db, "dane_zwierzecia", {"numer_kolczyka": animal.ear_tag}, TODAY
     )
     assert dane["w_stadzie"] is True
-    # Samo zdarzenie zostaje w historii — hodowca musi widzieć, że próba się nie udała.
+    # Odrzucone zdarzenie pozostaje w historii zwierzęcia.
     assert len(dane["zdarzenia"]) == 1

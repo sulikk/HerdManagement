@@ -23,7 +23,7 @@ class EventRepository @Inject constructor(
     fun observePending(): Flow<List<AnimalEvent>> =
         eventDao.observePending().map { list -> list.map(EventEntity::toDomain) }
 
-    /** Zdarzenia niepotwierdzone przez IRZplus, jako pozycje widoku zgodności 7-dniowej. */
+    /** Zwraca zdarzenia niepotwierdzone przez IRZplus jako pozycje widoku zgodności. */
     fun observeComplianceItems(): Flow<List<ComplianceItem>> =
         eventDao.observeUnconfirmed().map { rows ->
             rows.map { row ->
@@ -42,7 +42,8 @@ class EventRepository @Inject constructor(
 
     /**
      * Zapisuje zdarzenie lokalnie i kolejkuje jego zapis w backendzie.
-     * [submitToIrz] = true tylko wtedy, gdy użytkownik jawnie potwierdził zgłoszenie (wymaganie F12).
+     *
+     * @param submitToIrz `true` wyłącznie po potwierdzeniu zgłoszenia przez użytkownika (wymaganie F12).
      */
     suspend fun add(event: AnimalEvent, submitToIrz: Boolean): Long {
         val id = eventDao.insert(
@@ -63,12 +64,11 @@ class EventRepository @Inject constructor(
     }
 
     /**
-     * Usuwa zdarzenie, które nie trafiło do rejestru (patrz [allowsRemoval]), i kolejkuje
-     * usunięcie w backendzie — inaczej pobranie zmian przyniosłoby je z powrotem.
+     * Usuwa zdarzenie niezapisane w rejestrze (zob. [allowsRemoval]) i kolejkuje jego
+     * usunięcie w backendzie. Reguła jest weryfikowana w repozytorium, niezależnie
+     * od warstwy interfejsu.
      *
-     * Zwraca `false`, gdy zdarzenia nie wolno usunąć. Warunek sprawdzamy tutaj, a nie
-     * tylko w interfejsie: reguła mówi o zgodności ewidencji z rejestrem, więc nie może
-     * zależeć od tego, który ekran zawołał usunięcie.
+     * @return `false`, gdy zdarzenia nie można usunąć.
      */
     suspend fun delete(eventId: Long): Boolean {
         val event = eventDao.getById(eventId) ?: return false
@@ -78,7 +78,7 @@ class EventRepository @Inject constructor(
         return true
     }
 
-    /** Zgłoszenie zdarzenia do IRZplus — wołać wyłącznie po potwierdzeniu przez użytkownika. */
+    /** Zleca zgłoszenie zdarzenia do IRZplus; wywoływane wyłącznie po potwierdzeniu użytkownika. */
     suspend fun submitToIrz(eventId: Long) {
         eventDao.updateIrzResult(
             id = eventId,

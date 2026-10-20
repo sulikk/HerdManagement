@@ -15,9 +15,9 @@ import javax.inject.Inject
 
 data class ListingListState(
     val filter: ListingFilter = ListingFilter(),
-    /** Widoczne pozycje w obrębie każdej zakładki, już po filtrach. */
+    /** Pozycje każdej zakładki po zastosowaniu filtrów. */
     val visible: Map<ListingGroup, List<ListingWithAnimal>> = emptyMap(),
-    /** Liczebność zakładek przed filtrowaniem — etykieta ma być stała. */
+    /** Liczebność zakładek przed filtrowaniem. */
     val totals: Map<ListingGroup, Int> = emptyMap(),
 ) {
     val isEmpty: Boolean get() = totals.values.sum() == 0
@@ -38,9 +38,6 @@ class ListingListViewModel @Inject constructor(
         repository.observeAll(),
         filter,
     ) { all, current ->
-        // Liczniki na zakładkach liczymy przed filtrem — inaczej wpisanie tekstu
-        // zerowałoby etykiety i nie dałoby się stwierdzić, czy zakładka jest pusta,
-        // czy tylko odfiltrowana.
         val byGroup = ListingGroup.entries.associateWith { group ->
             all.filter { group.accepts(it.status) }
         }

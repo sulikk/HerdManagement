@@ -1,4 +1,4 @@
-"""Test prostej migracji dokładającej nowe kolumny do starej bazy herd.db."""
+"""Testy uproszczonej migracji dodającej nowe kolumny do istniejącej bazy."""
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.pool import StaticPool
 
@@ -8,7 +8,7 @@ from app.database import add_missing_columns, init_db
 def test_stara_tabela_events_dostaje_nowe_kolumny():
     engine = create_engine("sqlite://", poolclass=StaticPool)
     with engine.begin() as conn:
-        # Schemat events sprzed dodania siedziby partnera i wyniku IRZ.
+        # Schemat tabeli events bez kolumn siedziby kontrahenta i wyniku IRZ.
         conn.execute(text(
             "CREATE TABLE events (id INTEGER PRIMARY KEY, animal_id INTEGER, type VARCHAR(9), "
             "event_date DATE, notes TEXT, irz_status VARCHAR(9), irz_submitted_at DATETIME, "
@@ -28,14 +28,10 @@ def test_stara_tabela_events_dostaje_nowe_kolumny():
 
 
 def test_stara_tabela_listings_dostaje_kolumne_status():
-    """Regresja: `status` jest NOT NULL, więc migracja musi podać wartość domyślną.
-
-    Bez tego stara baza nie dostawała kolumny i każde zapytanie o ogłoszenia
-    kończyło się `no such column: listings.status`.
-    """
+    """Kolumna `status` (NOT NULL) jest dodawana z wartością domyślną."""
     engine = create_engine("sqlite://", poolclass=StaticPool)
     with engine.begin() as conn:
-        # Schemat listings sprzed zadania 9 (bez statusu i pól weryfikacji).
+        # Schemat tabeli listings bez kolumny statusu i pól weryfikacji.
         conn.execute(text(
             "CREATE TABLE listings (id INTEGER PRIMARY KEY, animal_id INTEGER, price FLOAT, "
             "description TEXT, irz_verified BOOLEAN, created_at DATETIME)",
@@ -49,12 +45,12 @@ def test_stara_tabela_listings_dostaje_kolumne_status():
     kolumny = {c["name"] for c in inspect(engine).get_columns("listings")}
     assert {"status", "photo_uri", "published_at", "irz_verified_at", "irz_message"} <= kolumny
     with engine.connect() as conn:
-        # Istniejący wiersz przeżywa migrację i dostaje sensowny status.
+        # Istniejący wiersz zostaje zachowany i otrzymuje status domyślny.
         assert conn.execute(text("SELECT status FROM listings WHERE id = 1")).scalar() == "DRAFT"
 
 
 def test_kolumna_not_null_bez_domyslnej_jest_pomijana():
-    """Takiej migracji nie da się wykonać w locie — ma być pominięta, nie wywalić startu."""
+    """Kolumna NOT NULL bez wartości domyślnej jest pomijana bez przerywania startu aplikacji."""
     from sqlalchemy import Column, Integer, String, Table
 
     from app.database import Base

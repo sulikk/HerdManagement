@@ -30,22 +30,18 @@ import java.time.Duration
 import java.time.LocalDateTime
 
 /**
- * Drenuje kolejkę synchronizacji (FIFO):
- * - zwierzęta, zdarzenia i leczenia trafiają do backendu aplikacji (z mapowaniem
- *   lokalne id -> zdalne); zwierzęta: tworzenie, edycja, usunięcie; leczenia:
- *   tworzenie, usunięcie; zdarzenia: tworzenie + wynik zgłoszenia IRZ,
- * - zgłoszenie do Portalu IRZplus (IRZ_SUBMIT) trafia do kolejki wyłącznie po
- *   potwierdzeniu przez użytkownika; wynik ustawia [IrzStatus] na CONFIRMED
- *   (nadano numer dokumentu) lub REJECTED (błędy walidacji) i jest przekazywany
- *   do backendu osobnym wpisem IRZ_RESULT.
+ * Przetwarza kolejkę synchronizacji w kolejności FIFO.
  *
- * Obsługa błędów ([classifySyncError]): brak sieci → ponawianie bez limitu,
- * błąd serwera → do [SyncContract.MAX_RETRIES], błąd danych → od razu FAILED.
- * Ponowienia planuje osobne zadanie ([SyncManager.scheduleRetry]), więc nowe zmiany
- * nie czekają za backoffem. Worker zawsze kończy się sukcesem.
+ * - Zwierzęta, zdarzenia, leczenia i ogłoszenia są przesyłane do backendu aplikacji
+ *   z zachowaniem mapowania identyfikatorów lokalnych na zdalne.
+ * - Zgłoszenie do IRZplus (IRZ_SUBMIT) trafia do kolejki wyłącznie po potwierdzeniu
+ *   przez użytkownika. Wynik ustawia [IrzStatus] na CONFIRMED lub REJECTED i jest
+ *   przekazywany do backendu osobnym wpisem IRZ_RESULT.
  *
- * Brakujące zależności (zwierzę/zdarzenie nieobecne na serwerze) są odtwarzane
- * na bieżąco z lokalnej bazy — w tym po 404, gdy serwer utracił dane.
+ * Obsługa błędów ([classifySyncError]): błąd sieci jest ponawiany bez limitu, błąd
+ * serwera do [SyncContract.MAX_RETRIES] razy, a błąd danych od razu oznacza wpis jako
+ * FAILED. Ponowienia planuje osobne zadanie ([SyncManager.scheduleRetry]). Rekordy
+ * nadrzędne nieobecne na serwerze (również po odpowiedzi 404) są odtwarzane z bazy lokalnej.
  */
 @HiltWorker
 class SyncWorker @AssistedInject constructor(
@@ -63,7 +59,7 @@ class SyncWorker @AssistedInject constructor(
     private val json: Json,
 ) : CoroutineWorker(context, params) {
 
-    /** Statusy, przy ktorych ogloszenie wciaz zajmuje zwierze po stronie backendu. */
+    /** Statusy, w których ogłoszenie blokuje zwierzę po stronie backendu. */
     private val ACTIVE_STATUSES = setOf("draft", "published")
 
     override suspend fun doWork(): Result = syncManager.mutex.withLock {
@@ -81,8 +77,8 @@ class SyncWorker @AssistedInject constructor(
             }
         }
 
-        // Dopiero po opróżnieniu kolejki pobieramy zmiany z backendu — wcześniej
-        // wersja z serwera byłaby starsza od tego, co czeka na wysłanie.
+        // Pobieranie następuje po wysłaniu kolejki, aby wersja serwerowa nie nadpisała
+        // nowszych zmian lokalnych.
         pullRemoteChanges()
 
         if (retryAttempt > 0) {
@@ -92,20 +88,16 @@ class SyncWorker @AssistedInject constructor(
     }
 
     /**
-     * Dociąga zmiany z backendu (wpisy asystenta LLM, poprawki z serwera, inne urządzenie).
+     * Pobiera zmiany wprowadzone po stronie serwera (m.in. przez asystenta LLM).
      *
-     * Błąd pobierania nie może wywrócić całej synchronizacji — wypchnięte właśnie
-     * zmiany są już na serwerze, a porcja do pobrania przyjdzie przy kolejnym
-     * uruchomieniu (znacznik `since` przesuwa się dopiero po udanym zapisie).
-     *
-     * Wynik zapisujemy w [SyncStateRepository], bo sam log nic nie mówi hodowcy:
-     * dotąd nieudane pobranie było zupełnie niewidoczne, a licznik kolejki wysyłkowej
-     * pokazywał „Zsynchronizowano”, mimo że z serwera nie przyszło nic.
+     * Błąd pobierania nie przerywa synchronizacji, ponieważ znacznik `since` jest
+     * przesuwany dopiero po udanym zapisie i porcja zostanie pobrana przy kolejnym
+     * uruchomieniu. Wynik jest zapisywany w [SyncStateRepository] i prezentowany
+     * użytkownikowi.
      */
     private suspend fun pullRemoteChanges() {
         try {
             when (val result = syncPuller.pull()) {
-                // Kolejka nie była pusta — to nie porażka, tylko odłożenie na później.
                 is SyncPuller.Result.Skipped -> Unit
                 is SyncPuller.Result.Applied -> {
                     syncState.recordPullSuccess()
@@ -156,8 +148,6 @@ class SyncWorker @AssistedInject constructor(
         }
     }
 
-    // --- Zwierzęta -------------------------------------------------------
-
     private suspend fun pushAnimal(entry: SyncQueueEntity) {
         val localId = json.decodeFromString<AnimalDto>(entry.payload).id
         ensureRemoteAnimal(localId)
@@ -165,26 +155,26 @@ class SyncWorker @AssistedInject constructor(
 
     private suspend fun updateAnimal(entry: SyncQueueEntity) {
         val localId = json.decodeFromString<AnimalDto>(entry.payload).id
-        // Wysyłamy aktualny stan z lokalnej bazy — najnowszy, nawet jeśli edycji było kilka.
+        // Wysyłany jest bieżący stan rekordu, co scala kilka kolejnych edycji w jedną.
         val current = animalDao.getById(localId)?.toDomain()?.toDto() ?: return
         val remoteId = syncDao.remoteIdFor(SyncContract.Entity.ANIMAL, localId)
         if (remoteId == null) {
-            ensureRemoteAnimal(localId) // utworzenie od razu z aktualnymi danymi
+            ensureRemoteAnimal(localId)
             return
         }
         try {
             api.updateAnimal(remoteId, current.copy(id = remoteId))
         } catch (e: HttpException) {
             if (e.code() != 404) throw e
-            // Serwer nie zna już tego zwierzęcia (np. wyczyszczona baza) — załóż je ponownie.
             syncDao.deleteMapping(SyncContract.Entity.ANIMAL, localId)
             ensureRemoteAnimal(localId)
         }
     }
 
     /**
-     * Zdalne id zwierzęcia; jeśli go brak — tworzy zwierzę na serwerze z danych lokalnych.
-     * Zwraca null, gdy zwierzę zostało usunięte lokalnie (wpis można pominąć).
+     * Zwraca zdalny identyfikator zwierzęcia, w razie potrzeby tworząc rekord na serwerze.
+     *
+     * @return identyfikator zdalny lub `null`, gdy zwierzę zostało usunięte lokalnie.
      */
     private suspend fun ensureRemoteAnimal(localId: Long): Long? {
         syncDao.remoteIdFor(SyncContract.Entity.ANIMAL, localId)?.let { return it }
@@ -193,7 +183,7 @@ class SyncWorker @AssistedInject constructor(
             api.createAnimal(dto)
         } catch (e: HttpException) {
             if (e.code() != 409) throw e
-            // Kolczyk już jest na serwerze — przejmij ten rekord i nadpisz go danymi z telefonu.
+            // Rekord o tym kolczyku już istnieje na serwerze — zostaje przejęty i nadpisany.
             val existing = api.listAnimals().firstOrNull { it.earTag == dto.earTag } ?: throw e
             api.updateAnimal(existing.id, dto.copy(id = existing.id))
         }
@@ -202,8 +192,10 @@ class SyncWorker @AssistedInject constructor(
     }
 
     /**
-     * Wywołanie wymagające istnienia zwierzęcia na serwerze. Przy 404 (serwer utracił
-     * zwierzę) odtwarza je i ponawia wywołanie raz. Null = zwierzę usunięte lokalnie.
+     * Wykonuje [call] dla zdalnego identyfikatora zwierzęcia. Po odpowiedzi 404 odtwarza
+     * zwierzę na serwerze i jednokrotnie ponawia wywołanie.
+     *
+     * @return wynik wywołania lub `null`, gdy zwierzę zostało usunięte lokalnie.
      */
     private suspend fun <T> withRemoteAnimal(localAnimalId: Long, call: suspend (Long) -> T): T? {
         val remoteId = ensureRemoteAnimal(localAnimalId) ?: return null
@@ -218,8 +210,8 @@ class SyncWorker @AssistedInject constructor(
     }
 
     /**
-     * Usunięcie po stronie serwera. Brak mapowania = obiekt nigdy nie dotarł na serwer,
-     * więc nie ma czego usuwać. 404 traktujemy jako sukces — stan docelowy osiągnięty.
+     * Usuwa rekord po stronie serwera. Brak mapowania oznacza, że rekord nie został
+     * nigdy wysłany. Odpowiedź 404 jest traktowana jako sukces.
      */
     private suspend fun deleteRemote(
         entry: SyncQueueEntity,
@@ -236,8 +228,6 @@ class SyncWorker @AssistedInject constructor(
         syncDao.deleteMapping(entity, payload.localId)
     }
 
-    // --- Ogłoszenia sprzedażowe (zadanie 9) ------------------------------
-
     private suspend fun pushListing(entry: SyncQueueEntity) {
         ensureRemoteListing(localIdOf(entry))
     }
@@ -246,7 +236,7 @@ class SyncWorker @AssistedInject constructor(
         val localId = localIdOf(entry)
         val remoteId = syncDao.remoteIdFor(SyncContract.Entity.LISTING, localId)
         if (remoteId == null) {
-            ensureRemoteListing(localId) // powstanie od razu z aktualną treścią
+            ensureRemoteListing(localId)
             return
         }
         val body = listingBody(localId) ?: return
@@ -259,12 +249,7 @@ class SyncWorker @AssistedInject constructor(
         }
     }
 
-    /**
-     * Akcja zmieniająca stan ogłoszenia (publikacja, wycofanie, sprzedaż).
-     *
-     * Publikacja trafia tu wyłącznie po potwierdzeniu przez użytkownika — kolejka
-     * jedynie dowozi jego decyzję do serwera (F12).
-     */
+    /** Wykonuje akcję zmieniającą stan ogłoszenia (wycofanie, oznaczenie jako sprzedane). */
     private suspend fun listingAction(entry: SyncQueueEntity, call: suspend (Long) -> Any) {
         val localId = localIdOf(entry)
         val remoteId = ensureRemoteListing(localId) ?: return
@@ -278,15 +263,11 @@ class SyncWorker @AssistedInject constructor(
     }
 
     /**
-     * Publikacja ogłoszenia (F12 + F14).
+     * Publikuje ogłoszenie zatwierdzone przez użytkownika (wymagania F12 i F14).
      *
-     * Backend przy publikacji sprawdza rejestr na nowo i potrafi odmówić — na
-     * przykład gdy sztuka została w międzyczasie rozliczona jako ubyła. Aplikacja
-     * zmieniła status optymistycznie, więc odmowę trzeba cofnąć lokalnie, inaczej
-     * hodowca widziałby „opublikowane” dla ogłoszenia, którego nie ma na giełdzie.
-     *
-     * Odmowa jest ostateczna, nie chwilowa — wpis kończy się jako wykonany,
-     * bo ponawianie go niczego nie zmieni.
+     * Backend ponownie weryfikuje dane w rejestrze i może odmówić publikacji (HTTP 409).
+     * Ponieważ status lokalny został zmieniony optymistycznie, odmowa przywraca szkic
+     * wraz z komunikatem. Odmowa ma charakter trwały, dlatego wpis kolejki nie jest ponawiany.
      */
     private suspend fun publishListing(entry: SyncQueueEntity) {
         val localId = localIdOf(entry)
@@ -307,15 +288,15 @@ class SyncWorker @AssistedInject constructor(
         }
     }
 
-    /** Treść komunikatu z odpowiedzi błędu FastAPI (`{"detail": "..."}`). */
+    /** Odczytuje komunikat z odpowiedzi błędu FastAPI w formacie `{"detail": "..."}`. */
     private fun detailOf(e: HttpException): String? = runCatching {
         val body = e.response()?.errorBody()?.string().orEmpty()
         json.decodeFromString<ErrorDetail>(body).detail?.trim()?.takeIf { it.isNotEmpty() }
     }.getOrNull()
 
     /**
-     * Weryfikacja wobec rejestru IRZplus (F14). Wynik zapisujemy od razu lokalnie,
-     * żeby odznaka pojawiła się bez czekania na pobranie zmian.
+     * Zleca weryfikację ogłoszenia w rejestrze IRZplus (wymaganie F14). Wynik jest
+     * zapisywany lokalnie bez oczekiwania na kolejne pobranie zmian.
      */
     private suspend fun verifyListing(entry: SyncQueueEntity) {
         val localId = localIdOf(entry)
@@ -331,7 +312,7 @@ class SyncWorker @AssistedInject constructor(
         )
     }
 
-    /** Zdalne id ogłoszenia; przy braku — zakłada je na serwerze z danych lokalnych. */
+    /** Zwraca zdalny identyfikator ogłoszenia, w razie potrzeby tworząc rekord na serwerze. */
     private suspend fun ensureRemoteListing(localId: Long): Long? {
         syncDao.remoteIdFor(SyncContract.Entity.LISTING, localId)?.let { return it }
         val body = listingBody(localId) ?: return null
@@ -339,8 +320,7 @@ class SyncWorker @AssistedInject constructor(
             api.createListing(body)
         } catch (e: HttpException) {
             if (e.code() != 409) throw e
-            // Serwer ma już aktywne ogłoszenie tego zwierzęcia — przejmij je,
-            // zamiast zakładać drugie (backend i tak na to nie pozwoli).
+            // Backend dopuszcza jedno aktywne ogłoszenie na zwierzę — istniejące zostaje przejęte.
             val existing = api.getChanges(null).listings
                 .firstOrNull { it.animalId == body.animalId && it.status in ACTIVE_STATUSES }
                 ?: throw e
@@ -350,7 +330,7 @@ class SyncWorker @AssistedInject constructor(
         return remote.id
     }
 
-    /** Treść ogłoszenia z lokalnej bazy, z podmienionym zdalnym id zwierzęcia. */
+    /** Buduje treść żądania z lokalnego ogłoszenia, podstawiając zdalny identyfikator zwierzęcia. */
     private suspend fun listingBody(localId: Long): ListingWriteDto? {
         val listing = listingDao.getById(localId) ?: return null
         val remoteAnimalId = ensureRemoteAnimal(listing.animalId) ?: return null
@@ -365,17 +345,17 @@ class SyncWorker @AssistedInject constructor(
     private fun localIdOf(entry: SyncQueueEntity): Long =
         json.decodeFromString<LocalIdPayload>(entry.payload).localId
 
-    // --- Zdarzenia -------------------------------------------------------
-
-    /** Zapis zdarzenia w backendzie aplikacji (bez zgłoszenia do IRZplus). */
+    /** Zapisuje zdarzenie w backendzie aplikacji, bez zgłaszania go do IRZplus. */
     private suspend fun pushEvent(entry: SyncQueueEntity) {
         val localId = json.decodeFromString<LocalIdOnly>(entry.payload).id
         ensureRemoteEvent(localId)
     }
 
     /**
-     * Zdalne id zdarzenia; jeśli go brak — tworzy zdarzenie na serwerze z aktualnego
-     * stanu lokalnego (łącznie z wynikiem IRZ). Null = zdarzenie usunięte lokalnie.
+     * Zwraca zdalny identyfikator zdarzenia, w razie potrzeby tworząc rekord na serwerze
+     * z bieżącego stanu lokalnego (wraz z wynikiem zgłoszenia IRZ).
+     *
+     * @return identyfikator zdalny lub `null`, gdy zdarzenie zostało usunięte lokalnie.
      */
     private suspend fun ensureRemoteEvent(localId: Long): Long? {
         syncDao.remoteIdFor(SyncContract.Entity.EVENT, localId)?.let { return it }
@@ -387,10 +367,9 @@ class SyncWorker @AssistedInject constructor(
         return created.id
     }
 
-    /** Zgłoszenie do IRZplus — w kolejce tylko po potwierdzeniu przez użytkownika. */
+    /** Wysyła zgłoszenie zdarzenia do IRZplus i zapisuje wynik lokalnie. */
     private suspend fun submitToIrz(entry: SyncQueueEntity) {
         val eventId = json.decodeFromString<LocalIdPayload>(entry.payload).localId
-        // Zdarzenie lub zwierzę usunięte lokalnie — nie ma czego zgłaszać.
         val event = eventDao.getById(eventId)?.toDomain() ?: return
         val animal = animalDao.getById(event.animalId)?.toDomain() ?: return
 
@@ -400,7 +379,6 @@ class SyncWorker @AssistedInject constructor(
         val message = if (accepted) {
             response.komunikat.ifBlank { "Przyjęto przez IRZplus." }
         } else {
-            // Złóż czytelny powód odrzucenia z komunikatu i opisów błędów walidacji.
             val powody = response.bledy.joinToString("; ") { it.opis }
             listOf(response.komunikat, powody).filter { it.isNotBlank() }.joinToString(" ")
                 .ifBlank { "Zgłoszenie odrzucone przez IRZplus." }
@@ -415,13 +393,13 @@ class SyncWorker @AssistedInject constructor(
         syncManager.enqueueIrzResult(eventId)
     }
 
-    /** Przekazanie wyniku zgłoszenia IRZ do backendu aplikacji. */
+    /** Przekazuje wynik zgłoszenia IRZ do backendu aplikacji. */
     private suspend fun pushIrzResult(entry: SyncQueueEntity) {
         val eventId = json.decodeFromString<LocalIdPayload>(entry.payload).localId
         val event = eventDao.getById(eventId)?.toDomain() ?: return
         val remoteId = syncDao.remoteIdFor(SyncContract.Entity.EVENT, eventId)
         if (remoteId == null) {
-            ensureRemoteEvent(eventId) // tworzone od razu z wynikiem IRZ
+            ensureRemoteEvent(eventId)
             return
         }
         try {
@@ -433,8 +411,6 @@ class SyncWorker @AssistedInject constructor(
         }
     }
 
-    // --- Leczenia --------------------------------------------------------
-
     private suspend fun pushTreatment(entry: SyncQueueEntity) {
         val dto = json.decodeFromString<TreatmentDto>(entry.payload)
         if (syncDao.remoteIdFor(SyncContract.Entity.TREATMENT, dto.id) != null) return
@@ -443,8 +419,6 @@ class SyncWorker @AssistedInject constructor(
         } ?: return
         syncDao.putMapping(IdMappingEntity(SyncContract.Entity.TREATMENT, dto.id, created.id))
     }
-
-    // --- Stan wpisów -----------------------------------------------------
 
     private suspend fun markDone(entry: SyncQueueEntity) {
         syncDao.updateEntry(
@@ -456,7 +430,11 @@ class SyncWorker @AssistedInject constructor(
         )
     }
 
-    /** Zapisuje błąd wpisu. Zwraca numer próby do zaplanowania ponowienia lub 0 (bez ponowienia). */
+    /**
+     * Zapisuje błąd wpisu kolejki.
+     *
+     * @return numer próby, dla której należy zaplanować ponowienie, lub 0, gdy wpis nie będzie ponawiany.
+     */
     private suspend fun handleError(entry: SyncQueueEntity, error: Exception): Int {
         val retries = entry.retries + 1
         val failed = when (classifySyncError(error)) {
@@ -472,7 +450,7 @@ class SyncWorker @AssistedInject constructor(
             updatedAt = LocalDateTime.now().toString(),
         )
         if (failed && entry.operation == SyncContract.Operation.IRZ_SUBMIT) {
-            // Zgłoszenie nie dotarło do IRZplus — cofnij „wysyłanie”, żeby użytkownik mógł ponowić.
+            // Przywrócenie stanu PENDING umożliwia użytkownikowi ponowne wysłanie zgłoszenia.
             val eventId = json.decodeFromString<LocalIdPayload>(entry.payload).localId
             eventDao.updateIrzResult(
                 id = eventId,

@@ -47,11 +47,8 @@ import com.example.herdmanagementmobile.data.settings.ThemeMode
 import kotlinx.coroutines.launch
 
 /**
- * Ustawienia aplikacji.
- *
- * Dwie grupy o różnym charakterze: dane gospodarstwa wymagają walidacji i jawnego
- * zapisania (błędny numer producenta zerwałby logowanie do IRZplus), a ustawienia
- * wyglądu działają od razu — przełącznik, który trzeba zatwierdzać, jest irytujący.
+ * Ekran ustawień. Dane gospodarstwa wymagają walidacji i jawnego zapisu, natomiast
+ * ustawienia wyglądu są stosowane natychmiast.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -110,8 +107,6 @@ fun SettingsScreen(
     }
 }
 
-// --- Gospodarstwo -------------------------------------------------------
-
 @Composable
 private fun FarmSection(
     state: SettingsState,
@@ -151,8 +146,6 @@ private fun FarmSection(
     }
 }
 
-// --- Wygląd -------------------------------------------------------------
-
 @Composable
 private fun AppearanceSection(
     themeMode: ThemeMode,
@@ -187,8 +180,7 @@ private fun AppearanceSection(
             onChange = onHighContrast,
         )
 
-        // Material You działa dopiero od Androida 12 — na starszych wersjach
-        // przełącznik nie miałby czego zmienić.
+        // Kolorystyka dynamiczna jest dostępna od Androida 12.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             SwitchRow(
                 title = "Kolory z tapety systemu",
@@ -254,8 +246,6 @@ private fun SwitchRow(
     }
 }
 
-// --- O aplikacji --------------------------------------------------------
-
 @Composable
 private fun AboutSection() {
     SettingsCard(title = "O aplikacji") {
@@ -281,8 +271,6 @@ private fun InfoRow(label: String, value: String) {
         Text(value, style = MaterialTheme.typography.bodyMedium)
     }
 }
-
-// --- Wspólne ------------------------------------------------------------
 
 @Composable
 private fun SettingsCard(title: String, content: @Composable () -> Unit) {

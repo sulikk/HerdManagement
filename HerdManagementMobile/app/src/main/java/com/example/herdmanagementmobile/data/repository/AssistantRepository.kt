@@ -15,9 +15,9 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Rozmowa z asystentem LLM. Stan rozmowy trzyma backend — tutaj wystarczy
- * identyfikator zwrócony przy pierwszej wiadomości. Błędy sieci i serwera
- * tłumaczone są na komunikaty dla hodowcy.
+ * Repozytorium rozmowy z asystentem LLM. Stan rozmowy jest przechowywany przez backend
+ * i identyfikowany przez `conversationId`. Błędy sieci i serwera są zamieniane
+ * na komunikaty dla użytkownika.
  */
 @Singleton
 class AssistantRepository @Inject constructor(

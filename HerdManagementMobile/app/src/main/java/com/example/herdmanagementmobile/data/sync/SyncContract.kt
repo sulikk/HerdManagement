@@ -3,21 +3,21 @@ package com.example.herdmanagementmobile.data.sync
 import kotlinx.serialization.Serializable
 
 /**
- * Payload operacji odwołujących się do istniejącego rekordu (DELETE, IRZ_SUBMIT, IRZ_RESULT):
- * wystarczy lokalne id — zdalne bierzemy z mapy id, aktualne dane z lokalnej bazy.
+ * Treść wpisu kolejki odwołującego się do istniejącego rekordu. Identyfikator zdalny
+ * i aktualne dane są ustalane w chwili wysyłki.
  */
 @Serializable
 data class LocalIdPayload(val localId: Long)
 
-/** Odczyt samego pola `id` z payloadu DTO (pozostałe pola ignorowane przez Json). */
+/** Służy do odczytu samego pola `id` z treści wpisu zawierającej DTO. */
 @Serializable
 data class LocalIdOnly(val id: Long = 0L)
 
-/** Komunikat bledu z backendu FastAPI (`{"detail": "..."}`). */
+/** Treść odpowiedzi błędu backendu FastAPI (`{"detail": "..."}`). */
 @Serializable
 data class ErrorDetail(val detail: String? = null)
 
-/** Wspólne stałe opisujące wpisy w kolejce synchronizacji. */
+/** Stałe opisujące wpisy kolejki synchronizacji i parametry jej przetwarzania. */
 object SyncContract {
 
     object Entity {
@@ -33,19 +33,19 @@ object SyncContract {
         const val UPDATE = "UPDATE"
         const val DELETE = "DELETE"
 
-        /** Zgłoszenie zdarzenia do IRZplus — tylko po potwierdzeniu przez użytkownika. */
+        /** Zgłoszenie zdarzenia do IRZplus, dodawane wyłącznie po potwierdzeniu użytkownika. */
         const val IRZ_SUBMIT = "IRZ_SUBMIT"
 
-        /** Przekazanie wyniku zgłoszenia IRZ do backendu aplikacji. */
+        /** Przekazanie wyniku zgłoszenia IRZplus do backendu aplikacji. */
         const val IRZ_RESULT = "IRZ_RESULT"
 
-        /** Publikacja ogłoszenia — wyłącznie po jawnym potwierdzeniu (F12). */
+        /** Publikacja ogłoszenia, dodawana wyłącznie po potwierdzeniu użytkownika (wymaganie F12). */
         const val PUBLISH = "PUBLISH"
 
         const val WITHDRAW = "WITHDRAW"
         const val MARK_SOLD = "MARK_SOLD"
 
-        /** Weryfikacja ogłoszenia wobec rejestru IRZplus — odznaka F14. */
+        /** Weryfikacja ogłoszenia w rejestrze IRZplus (wymaganie F14). */
         const val VERIFY = "VERIFY"
     }
 
@@ -55,16 +55,16 @@ object SyncContract {
         const val FAILED = "FAILED"
     }
 
-    /** Limit prób dla błędów serwera (5xx). Brak sieci nie wyczerpuje limitu. */
+    /** Maksymalna liczba prób dla błędów serwera; błędy sieci nie są wliczane do limitu. */
     const val MAX_RETRIES = 5
     const val UNIQUE_WORK_NAME = "herd-sync"
     const val RETRY_WORK_NAME = "herd-sync-retry"
     const val PERIODIC_WORK_NAME = "herd-sync-periodic"
 
-    /** 15 min to minimum, jakie dopuszcza WorkManager dla zadan cyklicznych. */
+    /** Minimalny interwał zadań cyklicznych dopuszczany przez WorkManager. */
     const val PERIODIC_MINUTES = 15L
 
-    /** Backoff ponowień: 30 s, 60 s, 2 min, 4 min, maksymalnie 5 min. */
+    /** Parametry wykładniczego opóźnienia ponowień: 30 s, 60 s, 2 min, 4 min, maks. 5 min. */
     const val RETRY_BASE_SECONDS = 30L
     const val RETRY_MAX_SECONDS = 5 * 60L
 

@@ -16,41 +16,36 @@ import javax.inject.Singleton
 private val Context.syncDataStore by preferencesDataStore(name = "sync_state")
 
 /**
- * Znacznik ostatniej udanej synchronizacji pobierającej.
+ * Magazyn znacznika ostatniego udanego pobrania zmian.
  *
- * Wydzielone z implementacji na DataStore, żeby [SyncPuller] dało się przetestować
- * na zwykłej maszynie JVM, bez emulatora Androida.
+ * Abstrakcja umożliwia testowanie [SyncPuller] na JVM, bez zależności od DataStore.
  */
 interface SyncMarkerStore {
     suspend fun lastPullMarker(): String?
     suspend fun saveLastPullMarker(marker: String)
 
     /**
-     * Wiąże znacznik z konkretnym backendem. Gdy adres jest inny niż przy ostatnim
-     * pobraniu, znacznik przepada — patrz [SyncStateRepository.bindToServer].
+     * Wiąże znacznik z adresem backendu; zmiana adresu unieważnia znacznik
+     * (zob. [SyncStateRepository.bindToServer]).
      */
     suspend fun bindToServer(baseUrl: String)
 }
 
-/** Czy telefon ma dane z serwera — stan pokazywany użytkownikowi. */
+/** Stan pobierania zmian z serwera prezentowany użytkownikowi. */
 data class PullState(
     val lastPullAt: LocalDateTime? = null,
     val error: String? = null,
 ) {
-    /** Nigdy nie udało się pobrać zmian: telefon pokazuje wyłącznie własne wpisy. */
+    /** Określa, czy żadne pobranie zmian nie zakończyło się dotąd sukcesem. */
     val neverPulled: Boolean get() = lastPullAt == null
 }
 
 /**
- * Pamięta znacznik ostatniej udanej synchronizacji pobierającej oraz jej wynik.
+ * Przechowuje znacznik ostatniego udanego pobrania zmian oraz wynik ostatniej próby.
  *
- * Trzymamy tu dosłownie to, co przysłał backend w polu `server_time` — nie własny
- * czas urządzenia. Zegar telefonu bywa przestawiony, a przy porównywaniu dat
- * różnica choćby kilku minut albo gubi zmiany, albo każe pobierać je w kółko.
- *
- * Wynik pobierania zapisujemy osobno, bo bez niego nieudane pobranie było
- * niewidoczne: kolejka wysyłkowa świeciła „Zsynchronizowano”, choć z serwera nie
- * przyszło nic. Ekran stada czyta [observePullState] i mówi o tym wprost.
+ * Znacznikiem jest wartość `server_time` zwrócona przez backend, a nie czas urządzenia,
+ * dzięki czemu rozbieżność zegarów nie powoduje utraty ani wielokrotnego pobierania zmian.
+ * Wynik ostatniej próby jest udostępniany przez [observePullState].
  */
 @Singleton
 class SyncStateRepository @Inject constructor(
@@ -61,7 +56,7 @@ class SyncStateRepository @Inject constructor(
     private val pulledAtKey = stringPreferencesKey("last_pull_at")
     private val errorKey = stringPreferencesKey("last_pull_error")
 
-    /** `null` przy pierwszym uruchomieniu — backend odpowie wtedy pełną migawką. */
+    /** Zwraca `null` przy pierwszym uruchomieniu, co skutkuje pobraniem pełnej migawki. */
     override suspend fun lastPullMarker(): String? =
         context.syncDataStore.data.map { it[lastPullKey] }.first()
 
@@ -70,11 +65,8 @@ class SyncStateRepository @Inject constructor(
     }
 
     /**
-     * Znacznik „pobrano do…” ma sens tylko wobec tego backendu, który go wystawił.
-     * Po przesiadce na inny adres (inna sieć, serwer postawiony od nowa, świeża baza)
-     * dalsze pytanie „co się zmieniło od 20 września” dostałoby pustą odpowiedź i
-     * telefon utknąłby na własnych danych. Zmiana adresu zeruje więc znacznik, co
-     * wymusza pełną migawkę i uzgodnienie stanu z serwerem.
+     * Znacznik jest ważny wyłącznie dla serwera, który go wystawił. Zmiana adresu
+     * backendu usuwa znacznik, wymuszając pobranie pełnej migawki i uzgodnienie stanu.
      */
     override suspend fun bindToServer(baseUrl: String) {
         context.syncDataStore.edit { prefs ->
@@ -98,7 +90,7 @@ class SyncStateRepository @Inject constructor(
         context.syncDataStore.edit { it[errorKey] = message }
     }
 
-    /** Wymusza pełne pobranie przy następnej synchronizacji (np. po zmianie serwera). */
+    /** Wymusza pobranie pełnej migawki przy następnej synchronizacji. */
     suspend fun reset() {
         context.syncDataStore.edit { it.remove(lastPullKey) }
     }

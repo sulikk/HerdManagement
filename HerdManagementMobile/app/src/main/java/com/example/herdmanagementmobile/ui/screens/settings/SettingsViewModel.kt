@@ -34,7 +34,7 @@ class SettingsViewModel @Inject constructor(
     private val _state = MutableStateFlow(SettingsState())
     val state: StateFlow<SettingsState> = _state.asStateFlow()
 
-    /** Zmiany wyglądu zapisują się od razu — nie ma tu czego „zatwierdzać”. */
+    /** Ustawienia wyglądu; zmiany są zapisywane natychmiast. */
     val appearance: StateFlow<AppearanceSettings> = appearanceRepository.settings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppearanceSettings())
 

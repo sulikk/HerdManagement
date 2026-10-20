@@ -13,7 +13,7 @@ data class AnimalEvent(
     val type: EventType,
     val eventDate: LocalDate,
     val notes: String? = null,
-    /** Numer siedziby partnera: skąd przybyło (przybycie) / dokąd ubyło (ubycie). */
+    /** Numer siedziby stada kontrahenta: pochodzenia (przybycie) lub przeznaczenia (ubycie). */
     val partnerHoldingNumber: String? = null,
     val irzStatus: IrzStatus = IrzStatus.PENDING,
     val irzSubmittedAt: LocalDateTime? = null,
@@ -22,34 +22,23 @@ data class AnimalEvent(
 )
 
 /**
- * Zdarzenia opisujące rzeczywisty stan stada — bez odrzuconych przez IRZplus.
+ * Zwraca zdarzenia opisujące rzeczywisty stan stada, z pominięciem zgłoszeń odrzuconych
+ * przez IRZplus, które nie zmieniły stanu rejestru.
  *
- * Odrzucone zgłoszenie to próba, nie fakt: rejestr go nie przyjął, więc nic się nie
- * stało. Hodowca może dwa razy zgłosić urodzenie tego samego byczka — drugie odbije
- * się od rejestru, bo sztuka już tam jest. Liczone do statystyk dawało dwa urodzenia
- * i dwie sztuki przybyłe z jednej; przy ubyciu było gorzej, bo odrzucone zgłoszenie
- * wyprowadzało żywą sztukę ze stanu stada.
- *
- * Zdarzenia niezgłoszone ([IrzStatus.PENDING]) i wysłane ([IrzStatus.SUBMITTED])
- * zostają: cielę urodzone wczoraj jest w stadzie niezależnie od tego, czy hodowca
- * zdążył wypełnić zgłoszenie — na to właśnie ma ustawowe siedem dni.
+ * Zdarzenia niezgłoszone ([IrzStatus.PENDING]) i wysłane ([IrzStatus.SUBMITTED]) są
+ * uwzględniane, ponieważ odzwierciedlają faktyczny stan stada w okresie na dokonanie
+ * zgłoszenia.
  */
 fun List<AnimalEvent>.withoutRejected(): List<AnimalEvent> =
     filter { it.irzStatus != IrzStatus.REJECTED }
 
 /**
- * Czy zgłoszenie wolno usunąć z ewidencji bez rozjeżdżania się z rejestrem.
+ * Określa, czy zdarzenie można usunąć z ewidencji bez utraty zgodności z rejestrem.
  *
- * [IrzStatus.PENDING] nigdy nie poszło, a [IrzStatus.REJECTED] rejestr odrzucił — w obu
- * przypadkach w IRZplus nic nie powstało, więc skasowanie wpisu w telefonie niczego nie
- * zafałszuje. To właśnie te dwa stany potrafią uraść w stertę pozycji „do poprawy”,
- * których nie da się już naprawić — na przykład zgłoszenia urodzenia sztuki, która
- * jest w rejestrze od dawna.
- *
- * [IrzStatus.SUBMITTED] czeka na odpowiedź rejestru, a [IrzStatus.CONFIRMED] jest w nim
- * zapisane — tam wpis w aplikacji to jedyny ślad tego, co hodowca naprawdę zgłosił,
- * i musi zostać. Usunięcie potwierdzonego zgłoszenia kazałoby aplikacji kłamać
- * o stanie rejestru.
+ * Usunięcie jest dozwolone dla stanów [IrzStatus.PENDING] i [IrzStatus.REJECTED],
+ * w których zgłoszenie nie zostało zapisane w IRZplus. Zdarzenia w stanach
+ * [IrzStatus.SUBMITTED] i [IrzStatus.CONFIRMED] muszą zostać zachowane jako zapis
+ * dokonanego zgłoszenia.
  */
 val IrzStatus.allowsRemoval: Boolean
     get() = this == IrzStatus.PENDING || this == IrzStatus.REJECTED

@@ -4,10 +4,7 @@ import com.example.herdmanagementmobile.domain.model.EventType
 import com.example.herdmanagementmobile.domain.model.IrzStatus
 import java.time.LocalDate
 
-/**
- * Projekcja zapytania łączącego zdarzenie z danymi zwierzęcia (kolczyk, nazwa).
- * Używana przez widok zgodności 7-dniowej.
- */
+/** Projekcja zdarzenia wraz z danymi zwierzęcia, wykorzystywana w widoku zgodności. */
 data class ComplianceEventRow(
     val eventId: Long,
     val animalId: Long,

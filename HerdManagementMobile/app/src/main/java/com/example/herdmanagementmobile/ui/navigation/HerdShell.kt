@@ -27,14 +27,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 
-/**
- * Główne sekcje aplikacji — pozycje dolnego paska nawigacji.
- *
- * Material przewiduje pasek dla trzech do pięciu równorzędnych miejsc i dokładnie
- * tyle ich tu jest. Wcześniej wszystkie siedziały jako ikony w pasku górnym obok
- * chipa synchronizacji, co na telefonie oznaczało sześć celów dotyku w jednym
- * rzędzie — wbrew wymaganiu N2 (obsługa w rękawicach).
- */
+/** Główne sekcje aplikacji prezentowane w dolnym pasku nawigacji. */
 private enum class Section(
     val route: Route,
     val label: String,
@@ -48,11 +41,8 @@ private enum class Section(
 }
 
 /**
- * Powłoka aplikacji: dolna nawigacja plus graf ekranów.
- *
- * Pasek pokazuje się wyłącznie na ekranach głównych. Na kartach, formularzach
- * i skanerze znika — tam użytkownik jest „w głąb” zadania i ma wracać przyciskiem
- * wstecz, a nie przeskakiwać do innej sekcji.
+ * Powłoka aplikacji: dolny pasek nawigacji i graf ekranów. Pasek jest widoczny
+ * wyłącznie na ekranach głównych sekcji.
  */
 @Composable
 fun HerdShell(
@@ -79,8 +69,7 @@ fun HerdShell(
                             onClick = { navController.switchTo(section.route) },
                             label = { Text(section.label) },
                             icon = {
-                                // Licznik zaległych terminów zgłoszeń — hodowca widzi,
-                                // że coś go goni, bez wchodzenia w sekcję.
+                                // Licznik zgłoszeń wymagających reakcji.
                                 if (section == Section.COMPLIANCE && dueCount > 0) {
                                     BadgedBox(badge = { Badge { Text("$dueCount") } }) {
                                         Icon(section.icon, contentDescription = null)
@@ -104,12 +93,7 @@ fun HerdShell(
     }
 }
 
-/**
- * Przejście między sekcjami bez narastania historii.
- *
- * Bez `popUpTo` każde kliknięcie w pasku dokładałoby ekran na stos i wyjście
- * z aplikacji wymagałoby tylu naciśnięć „wstecz”, ile było przełączeń.
- */
+/** Przełącza sekcję bez odkładania kolejnych ekranów na stos nawigacji. */
 private fun NavHostController.switchTo(route: Route) {
     navigate(route.path) {
         popUpTo(graph.findStartDestination().id) { saveState = true }

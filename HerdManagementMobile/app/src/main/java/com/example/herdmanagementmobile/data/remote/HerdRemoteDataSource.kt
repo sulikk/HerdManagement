@@ -9,8 +9,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Cienka warstwa nad [HerdApiService] zwracająca [Result] zamiast rzucać wyjątki.
- * Mapuje DTO na modele domenowe, gotowa do użycia przez warstwę synchronizacji (SyncWorker).
+ * Warstwa pośrednia nad [HerdApiService] mapująca DTO na modele domenowe
+ * i zwracająca [Result] zamiast zgłaszać wyjątki.
  */
 @Singleton
 class HerdRemoteDataSource @Inject constructor(

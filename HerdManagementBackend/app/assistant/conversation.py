@@ -1,9 +1,8 @@
-"""Stan rozmów z asystentem (in-memory).
+"""Stan rozmów z asystentem przechowywany w pamięci.
 
-Messages API jest bezstanowe — całą historię trzeba wysyłać przy każdym żądaniu.
-Trzymamy ją po stronie serwera, bo zawiera bloki narzędziowe modelu, których
-aplikacja mobilna nie musi znać: telefon operuje tylko identyfikatorem rozmowy.
-Stan ginie przy restarcie procesu, co dla prototypu jest wystarczające.
+Messages API jest bezstanowe, dlatego pełna historia (wraz z blokami narzędziowymi)
+jest przechowywana po stronie serwera, a aplikacja mobilna posługuje się wyłącznie
+identyfikatorem rozmowy. Stan nie jest utrwalany i jest tracony przy restarcie procesu.
 """
 import secrets
 import threading
@@ -28,15 +27,15 @@ class PendingAction:
     name: str
     params: dict[str, Any]
     description: str
-    # Wyniki narzędzi odczytowych wywołanych w tej samej turze — muszą wrócić
-    # do modelu razem z wynikiem akcji, bo każdy blok tool_use wymaga odpowiedzi.
+    # Wyniki narzędzi odczytowych z tej samej tury; są przekazywane modelowi razem
+    # z wynikiem akcji, ponieważ każdy blok tool_use wymaga odpowiedzi.
     prepared_results: list[dict[str, Any]] = field(default_factory=list)
     deferred_ids: list[str] = field(default_factory=list)
 
 
 @dataclass
 class ExecutedAction:
-    """Wpis dziennika: co i kiedy asystent zmienił w danych po zgodzie użytkownika."""
+    """Wpis dziennika akcji wykonanej przez asystenta po decyzji użytkownika."""
 
     name: str
     params: dict[str, Any]
@@ -61,7 +60,7 @@ class Conversation:
 
 
 class ConversationStore:
-    """Pamięciowy rejestr rozmów wraz z globalnym dziennikiem akcji."""
+    """Rejestr rozmów w pamięci wraz z globalnym dziennikiem akcji."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -102,7 +101,7 @@ class ConversationStore:
             return list(self._audit)
 
     def _prune(self) -> None:
-        """Usuwa rozmowy przeterminowane, a przy przepełnieniu — najstarsze."""
+        """Usuwa rozmowy wygasłe, a po przekroczeniu limitu — najstarsze."""
         deadline = _now() - CONVERSATION_TTL
         for key in [k for k, c in self._conversations.items() if c.updated_at < deadline]:
             del self._conversations[key]

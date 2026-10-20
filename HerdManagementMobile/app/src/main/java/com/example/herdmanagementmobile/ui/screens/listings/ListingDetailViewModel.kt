@@ -23,13 +23,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-/**
- * Ogłoszenie razem ze sztuką, której dotyczy.
- *
- * Samo ogłoszenie zna tylko identyfikator zwierzęcia, więc ekran szczegółów
- * nie miał czym pokazać kolczyka ani rasy — a to pierwsza rzecz, po której
- * hodowca rozpoznaje, o którą sztukę chodzi.
- */
+/** Ogłoszenie wraz z danymi zwierzęcia, którego dotyczy. */
 data class ListingDetail(
     val listing: Listing,
     val animal: Animal?,
@@ -64,7 +58,7 @@ class ListingDetailViewModel @Inject constructor(
 
     fun dismissMessage() = _message.update { null }
 
-    /** Publikacja po potwierdzeniu w dialogu — wymaganie F12. */
+    /** Publikuje ogłoszenie po potwierdzeniu w oknie dialogowym (wymaganie F12). */
     fun publish() = viewModelScope.launch {
         repository.publish(listingId)
         _message.update { "Ogłoszenie wysłane do publikacji." }
@@ -82,10 +76,7 @@ class ListingDetailViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Zleca porównanie danych z rejestrem IRZplus (F14). Wynik wraca z serwera,
-     * więc komunikat mówi o zleceniu, a nie o gotowym rozstrzygnięciu.
-     */
+    /** Zleca weryfikację danych w rejestrze IRZplus (wymaganie F14); wynik jest pobierany synchronizacją. */
     fun verify() = viewModelScope.launch {
         repository.requestVerification(listingId)
         _message.update { "Wysłano do sprawdzenia w IRZplus. Odznaka pojawi się po odpowiedzi rejestru." }

@@ -1,19 +1,16 @@
-"""Moduł publikacji ogłoszeń sprzedażowych — zadanie 9.
+"""Moduł publikacji ogłoszeń sprzedażowych.
 
-Trzy wymagania z dokumentacji sterują kształtem tego API:
+Realizowane wymagania:
 
-* **F12** — publikacja nie dzieje się sama. Ogłoszenie powstaje jako szkic
-  (``draft``) i dopiero osobne wywołanie ``POST /listings/{id}/publish``
-  czyni je widocznym. Ten sam wzorzec co przy zgłoszeniach do IRZplus:
-  zapis przygotowuje aplikacja, decyzję podejmuje człowiek.
-* **F13** — ``GET /listings/draft-for/{animal_id}`` zwraca dane karty zwierzęcia
-  gotowe do wstawienia w formularz, żeby hodowca nie przepisywał ich ręcznie.
-* **F14** — ``POST /listings/{id}/verify`` porównuje kartę zwierzęcia z rejestrem
-  IRZplus i nadaje (albo odbiera) odznakę „dane potwierdzone w IRZplus”.
+* F12 — ogłoszenie powstaje jako szkic (``draft``) i staje się widoczne dopiero
+  po wywołaniu ``POST /listings/{id}/publish``.
+* F13 — ``GET /listings/draft-for/{animal_id}`` zwraca dane karty zwierzęcia
+  do wstępnego wypełnienia formularza.
+* F14 — ``POST /listings/{id}/verify`` porównuje kartę zwierzęcia z rejestrem
+  IRZplus i nadaje lub odbiera odznakę „dane potwierdzone w IRZplus”.
 
-Zapytania kupujących (``/listings/{id}/inquiries``) są nieuwierzytelnione —
-w prototypie giełda jest otwarta, a po stronie hodowcy liczy się to, że zapytanie
-dotrze do telefonu przez synchronizację pobierającą.
+Zapytania kupujących (``/listings/{id}/inquiries``) nie wymagają uwierzytelnienia
+i trafiają do aplikacji mobilnej przez synchronizację.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -50,7 +47,7 @@ def get_listing(listing_id: int, db: Session = Depends(get_db)):
 
 @router.get("/animals/{animal_id}/listing-draft", response_model=schemas.ListingDraft)
 def listing_draft(animal_id: int, db: Session = Depends(get_db)):
-    """Dane karty zwierzęcia do wstępnego wypełnienia formularza (F13)."""
+    """Zwraca dane karty zwierzęcia do wstępnego wypełnienia formularza (wymaganie F13)."""
     animal = crud.get_animal(db, animal_id)
     if animal is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Nie znaleziono zwierzęcia.")
@@ -95,15 +92,11 @@ def update_listing(
 
 @router.post("/listings/{listing_id}/publish", response_model=schemas.ListingRead)
 def publish_listing(listing_id: int, db: Session = Depends(get_db)):
-    """Jawna publikacja ogłoszenia — wymagania F12 i F14.
+    """Publikuje ogłoszenie (wymagania F12 i F14).
 
-    Publikacja wymaga pozytywnej weryfikacji wobec rejestru IRZplus i **sprawdza
-    ją na nowo w tym momencie**, zamiast ufać zapisanej odznace. Bez tego dało się
-    wystawić tę samą sztukę wielokrotnie: po sprzedaży zwierzę jest w rejestrze
-    rozliczone, ale stary znacznik `irz_verified` nadal by na to pozwalał.
-
-    Świeże sprawdzenie zamyka też okno między weryfikacją a publikacją — jeśli
-    w międzyczasie zgłoszono ubycie albo padnięcie, ogłoszenie nie pójdzie dalej.
+    Publikacja wymaga pozytywnej weryfikacji w rejestrze IRZplus, wykonywanej ponownie
+    w chwili publikacji zamiast polegania na zapisanej odznace. Zapobiega to publikacji
+    ogłoszenia zwierzęcia, które w międzyczasie zostało rozliczone w rejestrze.
     """
     listing = _listing_or_404(db, listing_id)
     if listing.status == ListingStatus.PUBLISHED:
@@ -131,18 +124,17 @@ def withdraw_listing(listing_id: int, db: Session = Depends(get_db)):
 
 @router.post("/listings/{listing_id}/sold", response_model=schemas.ListingRead)
 def mark_sold(listing_id: int, db: Session = Depends(get_db)):
-    """Oznacza sprzedaż ogłoszenia.
+    """Oznacza ogłoszenie jako sprzedane.
 
-    To wyłącznie stan giełdy. Ubycie zwierzęcia z gospodarstwa jest osobnym
-    zdarzeniem i wymaga zgłoszenia do IRZplus w ciągu 7 dni — aplikacja
-    przypomina o tym na karcie zwierzęcia.
+    Zmienia wyłącznie status ogłoszenia. Ubycie zwierzęcia jest odrębnym zdarzeniem,
+    wymagającym zgłoszenia do IRZplus w terminie 7 dni.
     """
     return crud.set_listing_status(db, _listing_or_404(db, listing_id), ListingStatus.SOLD)
 
 
 @router.post("/listings/{listing_id}/verify", response_model=schemas.ListingVerification)
 def verify_listing(listing_id: int, db: Session = Depends(get_db)):
-    """Porównuje dane zwierzęcia z rejestrem IRZplus i ustawia odznakę (F14)."""
+    """Porównuje dane zwierzęcia z rejestrem IRZplus i ustawia odznakę (wymaganie F14)."""
     listing = _listing_or_404(db, listing_id)
     result = _run_verification(db, listing)
 
@@ -156,11 +148,7 @@ def verify_listing(listing_id: int, db: Session = Depends(get_db)):
 
 
 def _run_verification(db: Session, listing) -> VerificationResult:
-    """Sprawdza ogłoszenie wobec rejestru i zapisuje wynik na ogłoszeniu.
-
-    Wspólne dla ``/verify`` i ``/publish`` — publikacja nie może polegać na
-    znaczniku zapisanym kiedyś wcześniej.
-    """
+    """Weryfikuje ogłoszenie w rejestrze i zapisuje wynik; wspólne dla ``/verify`` i ``/publish``."""
     animal = crud.get_animal(db, listing.animal_id)
     if animal is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Nie znaleziono zwierzęcia.")
@@ -180,8 +168,6 @@ def delete_listing(listing_id: int, db: Session = Depends(get_db)):
     if not crud.delete_listing(db, listing_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Nie znaleziono ogłoszenia.")
 
-
-# --- Zapytania kupujących -----------------------------------------------
 
 @router.get("/listings/{listing_id}/inquiries", response_model=list[schemas.InquiryRead])
 def list_inquiries(listing_id: int, db: Session = Depends(get_db)):
@@ -207,10 +193,10 @@ def create_inquiry(
 
 
 def _describe(animal) -> str:
-    """Szkic opisu z danych karty — hodowca może go nadpisać.
+    """Tworzy proponowany opis ogłoszenia na podstawie karty zwierzęcia.
 
-    Wielką literę ustawiamy tylko na pierwszym znaku: ``str.capitalize()``
-    obniżyłoby wielkość liter w całym napisie i zepsuło numer kolczyka.
+    Wielka litera jest ustawiana wyłącznie dla pierwszego znaku, ponieważ
+    ``str.capitalize()`` zmieniłoby wielkość liter numeru kolczyka.
     """
     parts: list[str] = []
     if animal.breed:

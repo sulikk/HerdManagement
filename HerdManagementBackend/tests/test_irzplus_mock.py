@@ -1,7 +1,7 @@
-"""Testy integracyjne mocka API IRZplus.
+"""Testy integracyjne symulatora API IRZplus.
 
-Sprawdzają pełny przepływ HTTP: logowanie -> token Bearer -> pobieranie danych
--> zgłoszenia (urodzenie / przybycie / ubycie / padnięcie) z walidacją.
+Weryfikują pełny przepływ HTTP: logowanie, uzyskanie tokenu Bearer, pobieranie danych
+oraz zgłoszenia (urodzenie, przybycie, ubycie, padnięcie) wraz z walidacją.
 """
 from datetime import date, timedelta
 from itertools import count
@@ -26,7 +26,7 @@ _numery = count(1)
 
 
 def nowy_numer() -> str:
-    """Unikalny, poprawny numer bydła (z cyfrą kontrolną)."""
+    """Zwraca unikalny, poprawny numer identyfikacyjny bydła."""
     cyfry = f"{next(_numery):011d}"
     return f"PL{cyfry}{cyfra_kontrolna(cyfry)}"
 
@@ -85,10 +85,8 @@ def assert_odrzucone(response, *kody: str) -> None:
     assert set(kody) <= kody_bledow(response)
 
 
-# --- Cyfra kontrolna -----------------------------------------------------
 
-
-# Rzeczywiste numery buhajów z publicznych katalogów (MCHiRZ, PZHiPBM).
+# Numery buhajów z publicznych katalogów (MCHiRZ, PZHiPBM).
 PRAWDZIWE_NUMERY = [
     "PL005506613419", "PL005544460631", "PL005458914206", "PL005539084644",
     "PL005546525222", "PL005499385546", "PL005000168286", "PL005308805029",
@@ -108,8 +106,6 @@ def test_bledne_numery_odrzucone(numer: str):
 def test_seed_ma_poprawny_numer():
     assert poprawny_numer_zwierzecia(SEED_ZWIERZE)
 
-
-# --- Autoryzacja ---------------------------------------------------------
 
 
 class TestAutoryzacja:
@@ -169,8 +165,6 @@ class TestAutoryzacja:
         assert response.status_code == 401
 
 
-# --- Pobieranie danych ---------------------------------------------------
-
 
 class TestPobieranieDanych:
     def test_lista_zawiera_zwierze_z_seeda(self, client: TestClient, auth_headers):
@@ -205,8 +199,6 @@ class TestPobieranieDanych:
     def test_brak_parametru_numeru_zwraca_422(self, client: TestClient, auth_headers):
         assert client.get(ZWIERZE, headers=auth_headers).status_code == 422
 
-
-# --- Walidacja wspólna ---------------------------------------------------
 
 
 class TestWalidacjaWspolna:
@@ -262,8 +254,6 @@ class TestWalidacjaWspolna:
 
         assert response.status_code == 422
 
-
-# --- Zgłoszenie urodzenia ------------------------------------------------
 
 
 class TestUrodzenie:
@@ -353,8 +343,6 @@ class TestUrodzenie:
         assert zwierze.status_code == 404
 
 
-# --- Przybycie / ubycie / padnięcie ---------------------------------------
-
 
 class TestPrzemieszczenia:
     def test_przybycie_rejestruje_zwierze(self, client: TestClient, auth_headers):
@@ -432,11 +420,9 @@ class TestPrzemieszczenia:
         assert_przyjete(response, "UBYC")
 
 
-# --- Scenariusz end-to-end -------------------------------------------------
-
 
 def test_cykl_zycia_zwierzecia(client: TestClient, auth_headers):
-    """Urodzenie -> ubycie przed rejestracją niemożliwe -> po rejestracji OK -> koniec."""
+    """Pełny cykl życia: ubycie jest możliwe dopiero po zarejestrowaniu urodzenia."""
     numer = nowy_numer()
     ubycie = dyspozycja(pozycja_przemieszczenia(numer))
 

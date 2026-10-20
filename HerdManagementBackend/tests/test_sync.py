@@ -1,9 +1,7 @@
 """Testy synchronizacji przyrostowej (GET /sync/changes).
 
-Scenariusz, który te testy pilnują: zmiana powstała po stronie backendu (np. wpis
-asystenta LLM albo dane z innego urządzenia) musi dać się pobrać na telefon, a
-usunięty rekord musi zostać zgłoszony jako usunięty — inaczej ewidencja na
-telefonie po cichu rozjeżdża się z serwerem.
+Weryfikują, że zmiany wprowadzone po stronie backendu są udostępniane aplikacji
+mobilnej, a usunięcia rekordów są przekazywane w postaci znaczników usunięcia.
 """
 from fastapi.testclient import TestClient
 
@@ -55,7 +53,7 @@ def test_niezmienione_rekordy_nie_wracaja_drugi_raz(client: TestClient):
     first = _changes(client)
     assert len(first["animals"]) == 1
 
-    # Nic się nie zmieniło — druga synchronizacja ma nie przesyłać tego samego.
+    # Brak zmian — kolejna synchronizacja nie zwraca rekordów.
     second = _changes(client, since=first["server_time"])
     assert second["animals"] == []
     assert second["events"] == []
@@ -94,11 +92,11 @@ def test_zdarzenie_i_leczenie_sa_synchronizowane(client: TestClient):
     data = _changes(client, since=checkpoint)
     assert len(data["events"]) == 1
     assert len(data["treatments"]) == 1
-    assert data["animals"] == []  # samo zwierzę się nie zmieniło
+    assert data["animals"] == []  # rekord zwierzęcia nie uległ zmianie
 
 
 def test_patch_irz_wypycha_zdarzenie_do_zmian(client: TestClient):
-    """Wynik zgłoszenia do IRZplus też musi dotrzeć na pozostałe urządzenia."""
+    """Zapis wyniku zgłoszenia do IRZplus jest uwzględniany w zmianach."""
     animal = _create_animal(client)
     event = client.post(
         f"/animals/{animal['id']}/events",
@@ -164,7 +162,7 @@ def test_stare_nagrobki_nie_wracaja(client: TestClient):
 
 
 def test_since_z_offsetem_strefowym_liczy_sie_jak_utc(client: TestClient):
-    """Telefon w strefie +02:00 nie może dostać dwóch godzin zmian w kółko."""
+    """Parametr since z przesunięciem strefowym jest interpretowany jako UTC."""
     from datetime import datetime, timedelta, timezone
 
     _create_animal(client)
@@ -172,11 +170,11 @@ def test_since_z_offsetem_strefowym_liczy_sie_jak_utc(client: TestClient):
     warsaw = utc_now.astimezone(timezone(timedelta(hours=2)))
 
     data = _changes(client, since=warsaw.isoformat())
-    assert data["animals"] == []  # ten sam moment, tylko zapisany inaczej
+    assert data["animals"] == []  # ten sam moment w innym zapisie
 
 
 def test_wpis_asystenta_widoczny_w_synchronizacji(client: TestClient):
-    """Narzędzie asystenta zapisuje prosto w bazie backendu — telefon musi to zobaczyć."""
+    """Rekord utworzony przez narzędzie asystenta jest uwzględniany w zmianach."""
     from datetime import date
 
     from app.assistant import tools
@@ -205,13 +203,10 @@ def test_wpis_asystenta_widoczny_w_synchronizacji(client: TestClient):
 
 
 def test_nagrobek_po_odzyskanym_id_nie_jest_zglaszany(client: TestClient):
-    """Nagrobek przestaje obowiązywać, gdy jego identyfikator wrócił do obiegu.
+    """Znacznik usunięcia jest pomijany, gdy jego identyfikator został nadany ponownie.
 
-    SQLite nadaje klucz główny jako ``max(id) + 1``, więc po usunięciu ostatniego
-    wiersza jego numer dostaje następny rekord. Telefon dopasowuje nagrobki po
-    ``(encja, id)`` i nie ma jak rozpoznać, że ``animal/1`` dotyczy poprzednika:
-    przy pełnej migawce zapisywał świeże zwierzę, a potem kasował je starym
-    nagrobkiem — po reinstalacji aplikacji stado wychodziło puste.
+    SQLite nadaje klucz główny jako ``max(id) + 1``, więc identyfikator usuniętego
+    wiersza może zostać przypisany nowemu rekordowi.
     """
     first = _create_animal(client)
     assert client.delete(f"/animals/{first['id']}").status_code == 204
@@ -228,7 +223,7 @@ def test_nagrobek_po_odzyskanym_id_nie_jest_zglaszany(client: TestClient):
 
 
 def test_nagrobek_po_trwale_usunietym_rekordzie_wciaz_dociera(client: TestClient):
-    """Odsiewanie nie może zasłonić usunięcia, o którym telefon musi się dowiedzieć."""
+    """Znacznik usunięcia rekordu, którego identyfikator nie został ponownie nadany, jest zwracany."""
     first = _create_animal(client)
     _create_animal(client, ear_tag="PL004512378902")
     checkpoint = _changes(client)["server_time"]

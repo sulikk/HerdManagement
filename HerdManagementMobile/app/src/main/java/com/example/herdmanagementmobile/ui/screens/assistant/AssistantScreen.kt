@@ -60,13 +60,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.herdmanagementmobile.domain.model.AssistantAction
 
 /**
- * Czat z asystentem hodowcy (zadanie 8).
- *
- * Model pracuje po stronie backendu, a każda akcja zmieniająca dane wraca tu jako
- * propozycja do zatwierdzenia. Ekran ma o tym mówić wprost — stąd podpowiedzi na
- * start (hodowca nie musi zgadywać, o co można zapytać), osobny wygląd wpisów
- * o zapisach w ewidencji i dialog, który przed zatwierdzeniem wylicza dokładnie
- * to, co zostanie zapisane.
+ * Ekran rozmowy z asystentem LLM. Model działa po stronie backendu, a każda akcja
+ * modyfikująca dane jest prezentowana jako propozycja wymagająca zatwierdzenia
+ * w oknie dialogowym wyszczególniającym zapisywane dane.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -159,7 +155,7 @@ fun AssistantScreen(
     }
 }
 
-/** Gotowe pytania na start — najszybszy sposób, żeby pokazać, co asystent umie. */
+/** Przykładowe pytania wyświetlane na początku rozmowy. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Suggestions(enabled: Boolean, onPick: (String) -> Unit) {
@@ -182,10 +178,7 @@ private fun Suggestions(enabled: Boolean, onPick: (String) -> Unit) {
     }
 }
 
-/**
- * Sygnał, że backend pracuje. Model z narzędziami potrafi myśleć kilkanaście
- * sekund, więc bez tego ekran wyglądałby na zawieszony.
- */
+/** Wskaźnik oczekiwania na odpowiedź modelu. */
 @Composable
 private fun TypingIndicator() {
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -230,15 +223,12 @@ private fun ChatBubble(entry: ChatEntry) {
             } else {
                 MaterialTheme.colorScheme.surfaceVariant
             },
-            // Ścięty róg po stronie nadawcy — kierunek wypowiedzi widać bez czytania.
             shape = RoundedCornerShape(
                 topStart = 16.dp,
                 topEnd = 16.dp,
                 bottomStart = if (fromUser) 16.dp else 4.dp,
                 bottomEnd = if (fromUser) 4.dp else 16.dp,
             ),
-            // Ułamek szerokości zamiast sztywnych dp — na tablecie dymki nie zostają
-            // wąskim paskiem przy krawędzi.
             modifier = Modifier.fillMaxWidth(0.85f),
         ) {
             Text(
@@ -250,10 +240,7 @@ private fun ChatBubble(entry: ChatEntry) {
     }
 }
 
-/**
- * Wpis o skutku akcji. To nie jest wypowiedź modelu, tylko zapis tego, co stało się
- * z danymi — dlatego ma inną formę niż dymek i ikonę mówiącą o wyniku.
- */
+/** Wpis systemowy informujący o wyniku akcji asystenta. */
 @Composable
 private fun SystemNote(entry: ChatEntry) {
     val (icon, tint) = entry.tone.appearance()
@@ -332,7 +319,7 @@ private fun InputBar(
     }
 }
 
-/** „Agent proponuje — użytkownik zatwierdza”: bez tej zgody backend nic nie zapisze. */
+/** Okno dialogowe zatwierdzenia akcji zaproponowanej przez asystenta. */
 @Composable
 private fun ConfirmActionDialog(
     action: AssistantAction,

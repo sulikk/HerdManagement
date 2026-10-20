@@ -59,15 +59,9 @@ import java.time.format.DateTimeFormatter
 private val dayFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy")
 
 /**
- * Lista ogłoszeń sprzedażowych hodowcy (zadanie 9).
- *
- * Zakładki odwzorowują cykl życia ogłoszenia: szkic czeka na decyzję o publikacji
- * (F12), opublikowane jest widoczne dla kupujących, zakończone to sprzedane
- * i wycofane. Filtry działają w obrębie zakładki — hodowca szuka konkretnej sztuki
- * wśród swoich ofert, nie w całej giełdzie.
- *
- * Nowe ogłoszenie zakłada się z karty zwierzęcia, nie stąd: formularz ma być
- * wypełniony danymi sztuki (F13), więc musi wiedzieć, której dotyczy.
+ * Lista ogłoszeń sprzedażowych pogrupowana w zakładki według statusu (szkice,
+ * opublikowane, zamknięte). Filtry działają w obrębie wybranej zakładki. Nowe
+ * ogłoszenie tworzy się z karty zwierzęcia (wymaganie F13).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -181,7 +175,7 @@ private fun SearchField(query: String, onQueryChange: (String) -> Unit, onClear:
     )
 }
 
-/** Sortowanie i zawężenie do potwierdzonych — jeden rząd nad listą. */
+/** Pasek sortowania i filtra ogłoszeń zweryfikowanych. */
 @Composable
 private fun FilterRow(
     filter: ListingFilter,
@@ -305,8 +299,6 @@ private fun ListingRow(listing: ListingWithAnimal, onClick: () -> Unit) {
     }
 }
 
-// --- Stany puste --------------------------------------------------------
-
 @Composable
 private fun EmptyListings(modifier: Modifier = Modifier) {
     Column(
@@ -328,7 +320,7 @@ private fun EmptyListings(modifier: Modifier = Modifier) {
     }
 }
 
-/** Zakładka jest pusta z natury — to co innego niż wynik odfiltrowany do zera. */
+/** Komunikat pustej zakładki, odróżniany od braku wyników filtrowania. */
 @Composable
 private fun EmptyGroup(group: ListingGroup) {
     val message = when (group) {
@@ -364,7 +356,7 @@ private fun CenteredNote(text: String) {
     }
 }
 
-/** Odmiana: „1 ogłoszenie”, „2 ogłoszenia”, „5 ogłoszeń”. */
+/** Zwraca odmianę rzeczownika „ogłoszenie” dla podanej liczby. */
 private fun ogloszenia(count: Int): String {
     val last = count % 10
     val lastTwo = count % 100

@@ -15,7 +15,7 @@ class StatisticsViewModel @Inject constructor(
     repository: StatisticsRepository,
 ) : ViewModel() {
 
-    /** null = trwa pierwsze wczytanie. */
+    /** Statystyki stada; `null` do czasu pierwszego wczytania. */
     val stats: StateFlow<HerdStats?> = repository.observeStats()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 }

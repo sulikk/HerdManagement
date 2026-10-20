@@ -22,18 +22,16 @@ enum class ThemeMode(val label: String) {
 /**
  * Ustawienia wyglądu aplikacji.
  *
- * [highContrast] to tryb czarno-biały pomyślany pod pracę w polu — wymaganie N2
- * mówi o wysokim kontraście, a ekran telefonu w pełnym słońcu gubi subtelne
- * różnice odcieni. Monochromatyczna paleta jest wtedy czytelniejsza niż
- * kolorowa, bo liczy się jasność, nie barwa.
+ * @property highContrast monochromatyczny tryb wysokiego kontrastu przeznaczony do pracy
+ *   w pełnym słońcu (wymaganie N2).
  */
 data class AppearanceSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val highContrast: Boolean = false,
-    /** Kolory pobrane z tapety systemu (Material You, Android 12+). */
+    /** Kolorystyka dynamiczna pobierana z tapety systemu (Material You, Android 12+). */
     val dynamicColor: Boolean = true,
 ) {
-    /** Czy użyć ciemnego wariantu, przy danym stanie motywu systemowego. */
+    /** Określa, czy zastosować ciemny motyw przy danym ustawieniu systemowym. */
     fun darkTheme(systemInDark: Boolean): Boolean = when (themeMode) {
         ThemeMode.SYSTEM -> systemInDark
         ThemeMode.LIGHT -> false

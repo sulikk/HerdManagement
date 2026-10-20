@@ -32,22 +32,19 @@ data class EventFormState(
     val isSaving: Boolean = false,
     val saveError: String? = null,
     /**
-     * Sprzeczność z historią sztuki. `null`, dopóki historia nie jest wczytana albo nic
-     * się nie kłóci. Część sprzeczności blokuje zapis — patrz [blocked].
+     * Sprzeczność z historią zwierzęcia lub `null`, gdy jej brak lub historia nie została
+     * jeszcze wczytana (zob. [blocked]).
      */
     val conflict: EventConflict? = null,
 ) {
 
-    /**
-     * Zapis jest niemożliwy: sztuka już ma urodzenie albo padnięcie, a te zdarzają się
-     * raz w życiu. Przycisk zapisu jest wtedy wyłączony, a powód widoczny nad nim.
-     */
+    /** Określa, czy zapis jest niemożliwy z powodu sprzeczności blokującej. */
     val blocked: Boolean get() = conflict?.blocking == true
-    /** Przybycie/ubycie wymaga numeru siedziby partnera (skąd/dokąd). */
+    /** Określa, czy wymagany jest numer siedziby stada kontrahenta (przybycie, ubycie). */
     val requiresPartner: Boolean
         get() = type == EventType.ARRIVAL || type == EventType.DEPARTURE
 
-    /** Ustawowy termin zgłoszenia: data zdarzenia + 7 dni. */
+    /** Ustawowy termin zgłoszenia: data zdarzenia powiększona o 7 dni. */
     val deadline: LocalDate get() = eventDate.plusDays(ComplianceItem.REPORTING_DAYS)
 
     val daysToDeadline: Long get() = ChronoUnit.DAYS.between(LocalDate.now(), deadline)
@@ -64,7 +61,7 @@ class EventFormViewModel @Inject constructor(
     private val _state = MutableStateFlow(EventFormState())
     val state: StateFlow<EventFormState> = _state.asStateFlow()
 
-    /** Historia sztuki — potrzebna, żeby rozpoznać zdarzenie sprzeczne z ewidencją. */
+    /** Historia zdarzeń zwierzęcia wykorzystywana do wykrywania sprzeczności. */
     private var existing: List<AnimalEvent> = emptyList()
 
     init {
@@ -90,16 +87,13 @@ class EventFormViewModel @Inject constructor(
     fun onPartnerHoldingChange(value: String) =
         _state.update { it.copy(partnerHolding = value.uppercase(), partnerError = null) }
 
-    /** Sprawdza formularz przed pokazaniem pytania o zgłoszenie do IRZ. */
+    /** Waliduje formularz przed wyświetleniem pytania o zgłoszenie do IRZplus. */
     fun validate(): Boolean {
         if (animalId <= 0) return false
         val s = _state.value
-        // Blokady pilnujemy także tutaj, nie tylko wyłączonym przyciskiem: historia
-        // sztuki może się zmienić w tle (pobranie zmian z serwera) między kompozycją
-        // ekranu a kliknięciem.
+        // Ponowna weryfikacja blokady: historia mogła zmienić się w tle po synchronizacji.
         if (s.blocked) return false
-        // Zdarzenie to zapis tego, co już się stało — rejestr odrzuca daty przyszłe
-        // (ERR_DATA_PRZYSZLA), więc nie ma po co wysyłać takiego zgłoszenia.
+        // IRZplus odrzuca daty przyszłe (ERR_DATA_PRZYSZLA).
         if (s.eventDate.isAfter(LocalDate.now())) {
             _state.update { it.copy(dateError = "Data zdarzenia nie może być z przyszłości.") }
             return false
@@ -114,7 +108,11 @@ class EventFormViewModel @Inject constructor(
         return true
     }
 
-    /** [submitToIrz] — użytkownik potwierdził w dialogu zgłoszenie do IRZplus. */
+    /**
+     * Zapisuje zdarzenie.
+     *
+     * @param submitToIrz `true`, gdy użytkownik potwierdził zgłoszenie do IRZplus.
+     */
     fun save(submitToIrz: Boolean, onSuccess: () -> Unit) {
         if (!validate()) return
         val s = _state.value

@@ -1,4 +1,4 @@
-"""Kontrakt REST asystenta — to, co widzi aplikacja mobilna."""
+"""Schematy REST asystenta LLM udostępniane aplikacji mobilnej."""
 from datetime import datetime
 from typing import Any, Literal
 

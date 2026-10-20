@@ -1,8 +1,8 @@
-"""Schematy mocka API IRZplus — wzorowane na realnych plikach OpenAPI ARiMR.
+"""Schematy symulatora API IRZplus, wzorowane na specyfikacji OpenAPI ARiMR.
 
-Konwencje odwzorowane z dokumentacji gov.pl/web/arimr/api--portal-irzplus:
-- pola po polsku, camelCase (alias),
-- zgłoszenie jako "dyspozycja" z listą pozycji,
+Konwencje zgodne z dokumentacją gov.pl/web/arimr/api--portal-irzplus:
+- nazwy pól w języku polskim w notacji camelCase,
+- zgłoszenie w postaci dyspozycji z listą pozycji,
 - odpowiedź z numerem dokumentu i listą błędów walidacji.
 """
 from datetime import date
@@ -22,21 +22,21 @@ class LoginResponse(BaseModel):
 
 
 class PozycjaZgloszeniaDTO(BaseModel):
-    """Pojedyncza pozycja zgłoszenia. Część pól zależy od typu dokumentu."""
+    """Pozycja zgłoszenia; zestaw wymaganych pól zależy od typu dokumentu."""
 
     model_config = ConfigDict(populate_by_name=True)
 
     numerIdentyfikacyjnyZwierzecia: str
     numerSiedzibyStada: str
     dataZdarzenia: date
-    # urodzenie
+    # Pola zgłoszenia urodzenia
     numerIdentyfikacyjnyMatki: str | None = None
     plec: str | None = None
     rasa: str | None = None
     dataUrodzenia: date | None = None
-    # przemieszczenie (przybycie/ubycie)
+    # Pola zgłoszenia przybycia i ubycia
     numerSiedzibyStadaPartnera: str | None = None
-    # padnięcie
+    # Pola zgłoszenia padnięcia
     przyczynaPadniecia: str | None = None
 
 

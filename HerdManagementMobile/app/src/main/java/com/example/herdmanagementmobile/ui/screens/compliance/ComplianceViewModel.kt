@@ -14,12 +14,10 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Terminy podzielone wg tego, czego wymagają od hodowcy.
+ * Stan ekranu terminów.
  *
- * [waiting] to zdarzenia, które wystarczy wysłać. [rejected] odrzucił rejestr —
- * tam samo ponowienie nic nie da, trzeba najpierw poprawić dane. Mieszanie ich
- * na jednej liście zaśmiecało widok terminów pozycjami, których nie da się
- * załatwić jednym kliknięciem.
+ * @property waiting zdarzenia oczekujące na zgłoszenie.
+ * @property rejected zgłoszenia odrzucone przez rejestr, wymagające poprawy danych.
  */
 data class ComplianceState(
     val waiting: List<ComplianceItem> = emptyList(),
@@ -31,7 +29,7 @@ class ComplianceViewModel @Inject constructor(
     private val repository: EventRepository,
 ) : ViewModel() {
 
-    /** Pozycje posortowane wg terminu (najpilniejsze na górze). */
+    /** Pozycje posortowane według terminu, od najpilniejszych. */
     val state: StateFlow<ComplianceState> = repository.observeComplianceItems()
         .map { list ->
             val sorted = list.sortedBy { it.deadline }
@@ -42,16 +40,12 @@ class ComplianceViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ComplianceState())
 
-    /**
-     * Usuwa zgłoszenie, którego nie da się naprawić — na przykład urodzenie sztuki, która
-     * jest w rejestrze od dawna. Bez tego lista „do poprawy” rosłaby bez końca pozycjami,
-     * z którymi nie ma co zrobić, i przestałaby pokazywać to, co faktycznie wymaga uwagi.
-     */
+    /** Usuwa zgłoszenie niezapisane w rejestrze. */
     fun delete(eventId: Long) {
         viewModelScope.launch { repository.delete(eventId) }
     }
 
-    /** Hurtowe sprzątnięcie odrzuconych — przy kilkudziesięciu sztukach pozycja po pozycji. */
+    /** Usuwa wszystkie zgłoszenia odrzucone przez rejestr. */
     fun deleteAllRejected() {
         val ids = state.value.rejected.map { it.eventId }
         viewModelScope.launch { ids.forEach { repository.delete(it) } }

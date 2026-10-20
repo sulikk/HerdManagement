@@ -3,9 +3,8 @@ package com.example.herdmanagementmobile.data.remote.irzplus
 import kotlinx.serialization.Serializable
 
 /**
- * DTO klienta API IRZplus (ARiMR). Nazwy pól zgodne z realną konwencją Portalu
- * (po polsku, camelCase), zgłoszenie jako "dyspozycja" z pozycjami, odpowiedź
- * z numerem dokumentu i listą błędów walidacji. Daty jako ISO-8601 String.
+ * DTO API IRZplus. Nazwy pól są zgodne z konwencją Portalu ARiMR (język polski,
+ * camelCase), a daty przesyłane są w formacie ISO 8601.
  */
 @Serializable
 data class LoginRequest(

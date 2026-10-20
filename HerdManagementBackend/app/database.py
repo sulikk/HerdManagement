@@ -35,23 +35,18 @@ def init_db(bind: Engine = engine) -> None:
 
 
 def add_missing_columns(bind: Engine) -> list[str]:
-    """Dokłada do istniejących tabel kolumny, które doszły do modelu.
+    """Dodaje do istniejących tabel kolumny zdefiniowane w modelu, a nieobecne w bazie.
 
-    `create_all` nie modyfikuje istniejących tabel, więc po rozbudowie modelu stara
-    baza deweloperska (herd.db) nie miałaby nowych pól. Ta prosta migracja wystarcza
-    na etap prototypu; zmiany typów czy usuwanie kolumn wymagałyby Alembica.
-
-    Kolumny ``NOT NULL`` wymagają wartości domyślnej — SQLite nie ma czym wypełnić
-    istniejących wierszy. Gdy model podaje stały default (np. ``status`` ogłoszenia),
-    dokładamy je jako ``NOT NULL DEFAULT ...``; bez defaultu kolumna jest pomijana,
-    bo takiej migracji nie da się wykonać bezpiecznie w locie.
+    ``create_all`` nie modyfikuje istniejących tabel. Uproszczona migracja obsługuje
+    wyłącznie dodawanie kolumn; zmiana typów lub usuwanie kolumn wymagałyby narzędzia
+    Alembic. Kolumny ``NOT NULL`` są dodawane tylko wtedy, gdy model określa stałą
+    wartość domyślną (``NOT NULL DEFAULT ...``); w przeciwnym razie są pomijane.
     """
     added: list[str] = []
     inspector = inspect(bind)
     with bind.begin() as conn:
         for table in Base.metadata.sorted_tables:
-            # Tabeli może jeszcze nie być (create_all tworzy ją dopiero obok) —
-            # wtedy nie ma czego uzupełniać.
+            # Tabela nieistniejąca zostanie utworzona przez create_all.
             if not inspector.has_table(table.name):
                 continue
             existing = {c["name"] for c in inspector.get_columns(table.name)}
@@ -84,10 +79,9 @@ def add_missing_columns(bind: Engine) -> list[str]:
 
 
 def _default_literal(column) -> str | None:
-    """Stała domyślna kolumny w postaci literału SQL albo ``None``, gdy jej nie ma.
+    """Zwraca stałą wartość domyślną kolumny jako literał SQL lub ``None``.
 
-    Obsługuje tylko wartości stałe. Default wyliczany funkcją (jak ``_utcnow``)
-    zależy od momentu zapisu i nie ma sensu jako wypełniacz dla starych wierszy.
+    Wartości domyślne wyznaczane funkcją (np. ``_utcnow``) nie są obsługiwane.
     """
     default = column.default
     if default is None or not getattr(default, "is_scalar", False):
@@ -95,7 +89,7 @@ def _default_literal(column) -> str | None:
 
     value = default.arg
     if isinstance(value, Enum):
-        # SQLAlchemy zapisuje enumy pod nazwą składowej (DRAFT), nie wartością.
+        # SQLAlchemy zapisuje typy wyliczeniowe pod nazwą składowej (np. DRAFT).
         value = value.name
     if isinstance(value, bool):
         return "1" if value else "0"
@@ -108,12 +102,11 @@ def _default_literal(column) -> str | None:
 
 
 def backfill_sync_columns(bind: Engine) -> int:
-    """Uzupełnia ``updated_at`` w wierszach sprzed dodania tej kolumny.
+    """Uzupełnia brakujące wartości ``updated_at``.
 
-    Synchronizacja przyrostowa filtruje po ``updated_at > since``, a porównanie
-    z NULL nigdy nie jest prawdziwe — bez tego kroku dane zapisane przed migracją
-    nigdy nie trafiłyby na telefon. Uzupełniamy datą utworzenia (a gdy i jej brak,
-    bieżącą), więc takie wiersze przyjdą raz i potem się uspokoją.
+    Synchronizacja przyrostowa filtruje według ``updated_at > since``, a porównanie
+    z NULL nie jest nigdy prawdziwe. Brakujące wartości są uzupełniane datą utworzenia
+    lub, w razie jej braku, datą bieżącą.
     """
     inspector = inspect(bind)
     updated = 0

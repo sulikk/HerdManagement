@@ -12,8 +12,6 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface SyncDao {
 
-    // --- Kolejka synchronizacji -------------------------------------
-
     @Insert
     suspend fun enqueue(entry: SyncQueueEntity): Long
 
@@ -27,8 +25,8 @@ interface SyncDao {
     fun observeFailedCount(): Flow<Int>
 
     /**
-     * Ręczne ponowienie nieudanych wpisów. Zgłoszenia do IRZ są pomijane — po porażce
-     * wracają do stanu „Nie zgłoszono” i wymagają ponownego potwierdzenia użytkownika.
+     * Przywraca nieudane wpisy do kolejki. Zgłoszenia do IRZplus są pominięte, ponieważ
+     * ich ponowienie wymaga ponownego potwierdzenia użytkownika.
      */
     @Query(
         "UPDATE sync_queue SET status = 'PENDING', retries = 0, updatedAt = :updatedAt " +
@@ -48,18 +46,12 @@ interface SyncDao {
         updatedAt: String,
     )
 
-    // --- Mapa identyfikatorów lokalne -> zdalne ----------------------
-
     /**
-     * Zapisuje powiązanie lokalne ↔ zdalne, pilnując, że jedno zdalne id należy do
-     * dokładnie jednego rekordu lokalnego.
+     * Zapisuje mapowanie identyfikatora lokalnego na zdalny, zapewniając, że dany
+     * identyfikator zdalny wskazuje dokładnie jeden rekord lokalny.
      *
-     * Klucz główny tabeli to `(entity, localId)`, więc sam z siebie nie broni przed
-     * dwoma lokalnymi rekordami wskazującymi to samo zdalne id — a backend nadaje
-     * numery usuniętych wierszy od nowa, więc nowy rekord dostaje numer po
-     * poprzedniku. Zostawione stare powiązanie sprawiało, że [localIdFor] wskazywało
-     * rekord już nieistniejący i pobieranie zmian wpisywało dane serwera pod jego
-     * identyfikator — usunięte zdarzenie wracało z martwych, podpięte pod nowe zwierzę.
+     * Klucz główny `(entity, localId)` nie gwarantuje tej własności, a backend może
+     * ponownie wykorzystać identyfikatory usuniętych wierszy.
      */
     @Transaction
     suspend fun putMapping(mapping: IdMappingEntity) {
@@ -76,7 +68,7 @@ interface SyncDao {
     @Query("SELECT remoteId FROM id_mapping WHERE entity = :entity AND localId = :localId")
     suspend fun remoteIdFor(entity: String, localId: Long): Long?
 
-    /** Kierunek odwrotny — potrzebny przy pobieraniu zmian z backendu. */
+    /** Zwraca identyfikator lokalny odpowiadający zdalnemu; używane przy pobieraniu zmian. */
     @Query("SELECT localId FROM id_mapping WHERE entity = :entity AND remoteId = :remoteId")
     suspend fun localIdFor(entity: String, remoteId: Long): Long?
 
@@ -84,16 +76,11 @@ interface SyncDao {
     suspend fun deleteMapping(entity: String, localId: Long)
 
     /**
-     * Czyści powiązania zdarzeń, leczeń, ogłoszeń i zapytań danego zwierzęcia.
+     * Usuwa mapowania zdarzeń, leczeń, ogłoszeń i zapytań powiązanych ze zwierzęciem.
      *
-     * Tabela `id_mapping` nie ma klucza obcego do żadnej z tabel danych (jedna tabela
-     * opisuje pięć encji), więc kaskada przy usunięciu zwierzęcia jej nie dotyka i
-     * powiązania dzieci zostają jako śmieci. W połączeniu z ponownym użyciem numerów
-     * po stronie backendu takie śmieci przejmowały nowe rekordy.
-     *
-     * Wołać **przed** usunięciem zwierzęcia — po kaskadzie nie da się już ustalić,
-     * które wiersze do niego należały. Powiązanie samego zwierzęcia zostaje: jest
-     * jeszcze potrzebne, żeby wysłać usunięcie na serwer.
+     * Tabela `id_mapping` nie posiada kluczy obcych, dlatego nie podlega usuwaniu
+     * kaskadowemu. Metodę należy wywołać przed usunięciem zwierzęcia. Mapowanie samego
+     * zwierzęcia jest zachowywane, ponieważ jest potrzebne do wysłania usunięcia na serwer.
      */
     @Transaction
     suspend fun deleteChildMappingsForAnimal(animalId: Long) {
@@ -128,33 +115,21 @@ interface SyncDao {
     )
     suspend fun deleteInquiryMappingsForAnimal(animalId: Long)
 
-    /**
-     * To samo przy usunięciu samego ogłoszenia: kaskada zabiera jego zapytania,
-     * a ich powiązania zostałyby w mapie jako śmieci. Wołać **przed** usunięciem.
-     */
+    /** Usuwa mapowania zapytań powiązanych z ogłoszeniem; wywoływane przed jego usunięciem. */
     @Query(
         "DELETE FROM id_mapping WHERE entity = 'inquiry' AND localId IN " +
             "(SELECT id FROM inquiries WHERE listingId = :listingId)",
     )
     suspend fun deleteInquiryMappingsForListing(listingId: Long)
 
-    /**
-     * Wszystkie znane powiązania dla encji.
-     *
-     * Potrzebne przy pełnej migawce: rekord, który ma mapowanie, ale nie ma już
-     * odpowiednika na serwerze, został tam usunięty i musi zniknąć także lokalnie.
-     * Rekordy bez mapowania są nietykalne — nigdy nie dotarły na serwer.
-     */
+    /** Zwraca wszystkie mapowania danej encji; używane przy uzgadnianiu pełnej migawki. */
     @Query("SELECT * FROM id_mapping WHERE entity = :entity")
     suspend fun mappingsFor(entity: String): List<IdMappingEntity>
 
     /**
-     * Ile zmian czeka jeszcze na wysłanie (łącznie z nieudanymi).
-     *
-     * Pobieranie zmian z serwera ruszą dopiero, gdy to zejdzie do zera — inaczej
-     * starsza wersja z backendu nadpisałaby lokalną poprawkę, której nie zdążyliśmy
-     * wypchnąć. Zgłoszenia do IRZ pomijamy: po porażce wracają do ręcznej decyzji
-     * użytkownika i mogłyby blokować synchronizację w nieskończoność.
+     * Zwraca liczbę niewysłanych wpisów (oczekujących i nieudanych). Pobieranie zmian
+     * z serwera rozpoczyna się dopiero przy wartości zero. Zgłoszenia do IRZplus nie są
+     * wliczane, ponieważ ich ponowienie zależy od decyzji użytkownika.
      */
     @Query(
         "SELECT COUNT(*) FROM sync_queue " +

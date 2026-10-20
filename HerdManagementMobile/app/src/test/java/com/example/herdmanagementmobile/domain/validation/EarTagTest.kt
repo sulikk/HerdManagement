@@ -8,7 +8,7 @@ import org.junit.Test
 
 class EarTagTest {
 
-    /** Rzeczywiste numery buhajów z publicznych katalogów (MCHiRZ, PZHiPBM). */
+    /** Numery buhajów z publicznych katalogów (MCHiRZ, PZHiPBM). */
     private val realTags = listOf(
         "PL005506613419", "PL005544460631", "PL005544460945", "PL005458914206",
         "PL005539084644", "PL005514104091", "PL005553856104", "PL005481628606",
@@ -33,8 +33,8 @@ class EarTagTest {
 
     @Test
     fun `zamiana sąsiednich cyfr jest wykrywana`() {
-        // PL0055|06|613419 -> PL0055|60|613419. Wagi 3/1 wykrywają zamianę,
-        // o ile cyfry nie różnią się o 5 (ograniczenie schematu EAN).
+        // PL0055|06|613419 -> PL0055|60|613419. Wagi 3/1 wykrywają przestawienie cyfr,
+        // o ile nie różnią się one o 5 (ograniczenie schematu EAN).
         assertFalse(EarTag.hasValidCheckDigit("PL005560613419"))
     }
 

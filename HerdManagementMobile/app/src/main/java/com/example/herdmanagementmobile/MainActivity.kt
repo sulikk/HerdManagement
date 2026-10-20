@@ -27,14 +27,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        // Wypchnij zaległe wpisy z poprzedniej sesji i od razu pobierz zmiany z backendu.
         syncManager.scheduleSync()
-        // Odświeżanie w tle — zmiany powstałe poza telefonem (asystent LLM, inne
-        // urządzenie) nie mają własnego wyzwalacza po stronie aplikacji.
+        // Cykliczne pobieranie zmian wprowadzonych poza urządzeniem (np. przez asystenta LLM).
         syncManager.schedulePeriodicSync()
         setContent {
-            // Wyglad czytamy z ustawien, wiec zmiana motywu dziala od razu,
-            // bez restartu aplikacji.
             val look by appearance.settings.collectAsState(initial = AppearanceSettings())
             HerdManagementMobileTheme(
                 darkTheme = look.darkTheme(isSystemInDarkTheme()),

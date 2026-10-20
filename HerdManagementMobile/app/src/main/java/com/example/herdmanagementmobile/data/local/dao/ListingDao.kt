@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface ListingDao {
 
-    /** Lista ogłoszeń wraz z danymi zwierzęcia — kolczyk i rasa są potrzebne na każdej pozycji. */
+    /** Zwraca ogłoszenia wraz z danymi zwierzęcia i liczbą zapytań. */
     @Query(
         "SELECT l.id AS listingId, l.animalId AS animalId, l.price AS price, " +
             "l.description AS description, l.status AS status, l.irzVerified AS irzVerified, " +
@@ -31,7 +31,7 @@ interface ListingDao {
     @Query("SELECT * FROM listings WHERE id = :id")
     suspend fun getById(id: Long): ListingEntity?
 
-    /** Ogłoszenie blokujące ponowne wystawienie zwierzęcia (szkic albo opublikowane). */
+    /** Zwraca aktywne ogłoszenie zwierzęcia (szkic lub opublikowane). */
     @Query(
         "SELECT * FROM listings WHERE animalId = :animalId " +
             "AND status IN ('DRAFT', 'PUBLISHED') LIMIT 1",
@@ -54,7 +54,7 @@ interface InquiryDao {
     @Query("SELECT * FROM inquiries WHERE listingId = :listingId ORDER BY createdAt DESC")
     fun observeForListing(listingId: Long): Flow<List<InquiryEntity>>
 
-    /** Licznik do odznaki na liście ogłoszeń — hodowca widzi, że ktoś pyta. */
+    /** Zwraca łączną liczbę zapytań kupujących. */
     @Query("SELECT COUNT(*) FROM inquiries")
     fun observeCount(): Flow<Int>
 

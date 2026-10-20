@@ -8,10 +8,8 @@ import org.junit.Test
 import java.time.LocalDateTime
 
 /**
- * Filtrowanie i porządkowanie listy ogłoszeń.
- *
- * Te same wymagania co przy liście stada: fragment kolczyka ma wystarczyć,
- * polskie znaki nie mogą być obowiązkowe, a kolejność ma być stabilna.
+ * Testy filtrowania i sortowania listy ogłoszeń: dopasowanie po fragmencie numeru
+ * kolczyka, wyszukiwanie bez znaków diakrytycznych i stabilność kolejności.
  */
 class ListingFilterTest {
 
@@ -56,8 +54,6 @@ class ListingFilterTest {
 
     private fun ids(result: List<ListingWithAnimal>) = result.map { it.listingId }
 
-    // --- Zakładki -------------------------------------------------------
-
     @Test
     fun `szkice i opublikowane trafiaja do osobnych grup`() {
         assertTrue(ListingGroup.DRAFTS.accepts(ListingStatus.DRAFT))
@@ -71,8 +67,6 @@ class ListingFilterTest {
         assertTrue(ListingGroup.CLOSED.accepts(ListingStatus.WITHDRAWN))
         assertTrue(!ListingGroup.CLOSED.accepts(ListingStatus.DRAFT))
     }
-
-    // --- Wyszukiwanie ---------------------------------------------------
 
     @Test
     fun `pusty tekst nie zaweza listy`() {
@@ -94,8 +88,6 @@ class ListingFilterTest {
         assertEquals(listOf(1L), ids(all.applyFilter(ListingFilter(query = "holsztyn"))))
     }
 
-    // --- Filtr odznaki --------------------------------------------------
-
     @Test
     fun `filtr odznaki zostawia tylko potwierdzone w IRZplus`() {
         val result = all.applyFilter(ListingFilter(verifiedOnly = true))
@@ -107,8 +99,6 @@ class ListingFilterTest {
         val filter = ListingFilter(query = "simentalska", verifiedOnly = true)
         assertEquals(emptyList<Long>(), ids(all.applyFilter(filter)))
     }
-
-    // --- Sortowanie -----------------------------------------------------
 
     @Test
     fun `domyslnie od najnowszych`() {
@@ -132,8 +122,6 @@ class ListingFilterTest {
         val filter = ListingFilter(sort = ListingSort(ListingSortField.EAR_TAG, ascending = true))
         assertEquals(listOf(1L, 2L, 3L), ids(all.applyFilter(filter)))
     }
-
-    // --- Przełączanie kryterium -----------------------------------------
 
     @Test
     fun `klikniecie w aktywne kryterium odwraca kierunek`() {

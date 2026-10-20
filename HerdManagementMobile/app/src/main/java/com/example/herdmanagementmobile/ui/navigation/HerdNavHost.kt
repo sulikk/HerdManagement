@@ -195,8 +195,7 @@ fun HerdNavHost(
         ) {
             ListingFormScreen(
                 onSaved = { listingId ->
-                    // Po zapisie od razu karta ogłoszenia — tam podejmuje się
-                    // decyzję o publikacji (F12) i sprawdza dane w IRZplus (F14).
+                    // Karta ogłoszenia umożliwia publikację (F12) i weryfikację w IRZplus (F14).
                     navController.navigate(Route.ListingDetail.build(listingId)) {
                         popUpTo(Route.ListingForm.path) { inclusive = true }
                     }

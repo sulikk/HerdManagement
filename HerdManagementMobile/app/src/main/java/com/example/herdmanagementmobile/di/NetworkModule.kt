@@ -24,10 +24,9 @@ import javax.inject.Singleton
 object NetworkModule {
 
     /**
-     * Bazowy adres backendu — z `local.properties` (klucz `herd.baseUrl`) przez
-     * `BuildConfig`. Emulator widzi host maszyny jako 10.0.2.2; fizyczny telefon
-     * potrzebuje IP komputera w sieci LAN, a to zmienia się z każdą siecią, więc
-     * adres nie może leżeć w kodzie.
+     * Adres backendu odczytywany z `local.properties` (klucz `herd.baseUrl`) za pośrednictwem
+     * `BuildConfig`. Emulator wymaga adresu 10.0.2.2, a urządzenie fizyczne — adresu IP
+     * komputera w sieci lokalnej.
      */
     @Provides
     @Singleton
@@ -91,9 +90,8 @@ object NetworkModule {
 }
 
 /**
- * Odpowiedź asystenta powstaje dopiero po rozmowie backendu z modelem językowym
- * (często kilkadziesiąt sekund), więc dla ścieżek /assistant wydłużamy czas
- * oczekiwania. Pozostałe wywołania zostają przy krótkim timeoucie.
+ * Wydłuża limit czasu dla ścieżek `/assistant`, ponieważ generowanie odpowiedzi przez
+ * model językowy może trwać kilkadziesiąt sekund.
  */
 private object AssistantTimeoutInterceptor : Interceptor {
     private const val ASSISTANT_READ_TIMEOUT_SECONDS = 120

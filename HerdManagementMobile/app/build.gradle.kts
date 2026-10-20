@@ -10,11 +10,9 @@ plugins {
 }
 
 /**
- * Adres backendu zależy od sieci, w której stoi komputer z serwerem, więc nie może
- * być wpisany na stałe w kodzie — przy każdej zmianie IP trzeba by ruszać źródła.
- * Czytamy go z `local.properties` (klucz `herd.baseUrl`); plik jest poza repozytorium,
- * więc adres z laptopa nie trafia do commitów. Brak klucza = 10.0.2.2, czyli host
- * maszyny widziany z emulatora Androida.
+ * Adres backendu odczytywany z `local.properties` (klucz `herd.baseUrl`), który nie jest
+ * objęty kontrolą wersji. Wartością domyślną jest 10.0.2.2 — adres hosta widziany
+ * z emulatora Androida.
  */
 val herdBaseUrl: String = run {
     val file = rootProject.file("local.properties")
@@ -68,7 +66,7 @@ android {
 }
 
 dependencies {
-    // Core + Lifecycle
+    // Core i Lifecycle
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
@@ -91,7 +89,7 @@ dependencies {
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
 
-    // WorkManager + integracja z Hilt (offline sync)
+    // WorkManager z integracją Hilt (synchronizacja offline)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.hilt.work)
     ksp(libs.androidx.hilt.compiler)
@@ -101,26 +99,26 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
 
-    // Coroutines
+    // Korutyny
     implementation(libs.kotlinx.coroutines.android)
 
-    // DataStore (preferences dla tokenów IRZplus i ustawień użytkownika)
+    // DataStore (ustawienia aplikacji i stan synchronizacji)
     implementation(libs.androidx.datastore.preferences)
 
-    // Network (gotowe pod integrację z backendem i IRZplus)
+    // Komunikacja sieciowa (Retrofit, OkHttp, kotlinx.serialization)
     implementation(libs.retrofit)
     implementation(libs.retrofit.kotlinx.serialization.converter)
     implementation(libs.okhttp.logging.interceptor)
     implementation(libs.kotlinx.serialization.json)
 
-    // CameraX + ML Kit (skanowanie kolczyków)
+    // CameraX i ML Kit (skanowanie kolczyków)
     implementation(libs.androidx.camera.core)
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
     implementation(libs.mlkit.barcode.scanning)
 
-    // Tests
+    // Testy
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

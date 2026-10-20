@@ -29,17 +29,11 @@ data class AnimalDetailState(
     val animal: Animal? = null,
     val events: List<AnimalEvent> = emptyList(),
     val treatments: List<Treatment> = emptyList(),
-    /** Ogłoszenie zajmujące tę sztukę — szkic albo opublikowane (zadanie 9). */
+    /** Identyfikator aktywnego ogłoszenia zwierzęcia (szkic lub opublikowane). */
     val activeListingId: Long? = null,
-    /**
-     * Czy sztuka nadal jest w stadzie.
-     *
-     * Po ubyciu albo padnięciu karta zostaje w ewidencji (historia musi się
-     * zachować), ale bez tej informacji wyglądała identycznie jak karta
-     * zwierzęcia stojącego w oborze.
-     */
+    /** Określa, czy zwierzę znajduje się w stadzie (nie ubyło i nie padło). */
     val inHerd: Boolean = true,
-    /** Grupa użytkowa i wiek — to samo nazewnictwo co w statystykach. */
+    /** Grupa wiekowo-płciowa zgodna z nazewnictwem statystyk. */
     val ageGroup: AgeGroup? = null,
     val ageMonths: Long? = null,
 )
@@ -67,7 +61,6 @@ class AnimalDetailViewModel @Inject constructor(
             animal = animal,
             events = events,
             treatments = treatments,
-            // Ogłoszenie „zajmujące” sztukę — szkic albo opublikowane.
             activeListingId = listings
                 .firstOrNull {
                     it.animalId == animalId &&
@@ -84,15 +77,12 @@ class AnimalDetailViewModel @Inject constructor(
         initialValue = AnimalDetailState(),
     )
 
-    /** Wywoływane po potwierdzeniu w dialogu — zgłasza zdarzenie do IRZplus. */
+    /** Zgłasza zdarzenie do IRZplus; wywoływane po potwierdzeniu w oknie dialogowym. */
     fun submitToIrz(eventId: Long) {
         viewModelScope.launch { eventRepository.submitToIrz(eventId) }
     }
 
-    /**
-     * Usuwa zgłoszenie, które nie trafiło do rejestru — np. odrzucone urodzenie sztuki,
-     * która jest w IRZplus od dawna. Regułę pilnuje repozytorium.
-     */
+    /** Usuwa zdarzenie niezapisane w rejestrze; dopuszczalność weryfikuje repozytorium. */
     fun deleteEvent(eventId: Long) {
         viewModelScope.launch { eventRepository.delete(eventId) }
     }

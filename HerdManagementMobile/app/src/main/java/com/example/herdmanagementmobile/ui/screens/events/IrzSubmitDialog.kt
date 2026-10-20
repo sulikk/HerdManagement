@@ -10,10 +10,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 
-/**
- * Jawne potwierdzenie zgłoszenia do IRZplus (wymaganie F12: żadne zgłoszenie
- * nie jest wysyłane bez zgody użytkownika).
- */
+/** Okno potwierdzenia zgłoszenia do IRZplus (wymaganie F12). */
 @Composable
 fun IrzSubmitDialog(
     title: String,

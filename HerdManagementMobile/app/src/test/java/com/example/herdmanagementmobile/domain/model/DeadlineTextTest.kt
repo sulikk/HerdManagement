@@ -4,11 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * Odmiana liczebników w opisach terminów.
- *
- * Reguła polska jest trzystopniowa i łatwo o wpadkę w nastkach (12–14 zachowują
- * się jak liczby „duże”, mimo że kończą się na 2–4). To tekst, który hodowca widzi
- * przy każdym zaległym zgłoszeniu, więc błąd rzuca się w oczy natychmiast.
+ * Testy odmiany rzeczowników i czasowników przy liczebnikach w opisach terminów,
+ * ze szczególnym uwzględnieniem liczb 12–14.
  */
 class DeadlineTextTest {
 
@@ -32,7 +29,7 @@ class DeadlineTextTest {
 
     @Test
     fun `nastki zachowuja sie jak liczby duze`() {
-        // 12, 13, 14 kończą się na 2–4, ale biorą „zostało”, nie „zostały”.
+        // Liczby 12–14 przyjmują formę „zostało”.
         assertEquals("Zostało 12 dni", DeadlineText.timeLeft(12))
         assertEquals("Zostało 13 dni", DeadlineText.timeLeft(13))
         assertEquals("Zostało 14 dni", DeadlineText.timeLeft(14))
@@ -74,7 +71,6 @@ class DeadlineTextTest {
         assertEquals("lata", DeadlineText.years(4))
         assertEquals("lat", DeadlineText.years(5))
         assertEquals("lat", DeadlineText.years(11))
-        // Nastki znów zachowują się jak liczby duże.
         assertEquals("lat", DeadlineText.years(12))
         assertEquals("lat", DeadlineText.years(14))
         assertEquals("lata", DeadlineText.years(22))

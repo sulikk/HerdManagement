@@ -20,7 +20,7 @@ import com.example.herdmanagementmobile.domain.model.ListingStatus
 import java.text.NumberFormat
 import java.util.Locale
 
-/** Etykiety statusów ogłoszenia w języku hodowcy. */
+/** Zwraca etykietę statusu ogłoszenia. */
 fun ListingStatus.label(): String = when (this) {
     ListingStatus.DRAFT -> "Szkic"
     ListingStatus.PUBLISHED -> "Opublikowane"
@@ -33,9 +33,8 @@ private val priceFormat: NumberFormat = NumberFormat.getCurrencyInstance(Locale.
 fun formatPrice(value: Double): String = priceFormat.format(value)
 
 /**
- * Odznaka „dane potwierdzone w IRZplus” — wymaganie F14 i obietnica dla kupującego
- * z user story. Brak potwierdzenia pokazujemy wprost, a nie przez samą nieobecność
- * odznaki: hodowca ma wiedzieć, że jest co poprawić.
+ * Odznaka „dane potwierdzone w IRZplus” (wymaganie F14). Brak potwierdzenia jest
+ * sygnalizowany jawnie.
  */
 @Composable
 fun IrzBadge(
@@ -74,7 +73,7 @@ fun IrzBadge(
     )
 }
 
-/** Wiersz „etykieta: wartość” używany na karcie ogłoszenia. */
+/** Wiersz w układzie „etykieta: wartość” na karcie ogłoszenia. */
 @Composable
 fun InfoRow(label: String, value: String) {
     Row {

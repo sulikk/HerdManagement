@@ -1,8 +1,8 @@
-"""Endpointy asystenta LLM (Zadanie 8).
+"""Endpointy asystenta LLM.
 
-Aplikacja mobilna wysyła tylko tekst i identyfikator rozmowy — klucz API modelu
-nie opuszcza backendu. Akcje zapisujące wracają do telefonu jako ``pending_action``
-i czekają na ``POST /assistant/confirm``.
+Aplikacja mobilna przesyła wyłącznie treść wiadomości i identyfikator rozmowy.
+Akcje zapisujące są zwracane jako ``pending_action`` i wymagają potwierdzenia
+przez ``POST /assistant/confirm``.
 """
 import logging
 from typing import Any
@@ -32,7 +32,7 @@ router = APIRouter(prefix="/assistant", tags=["assistant"])
 
 
 def get_assistant() -> Assistant:
-    """Zależność FastAPI — w testach podmieniana przez ``dependency_overrides``."""
+    """Zależność FastAPI; w testach zastępowana przez ``dependency_overrides``."""
     try:
         return Assistant(llm.build_client())
     except llm.AssistantUnavailable as exc:
@@ -60,7 +60,7 @@ def _response(conversation: Conversation, result: TurnResult) -> ChatResponse:
 
 
 def _run(call) -> TurnResult:
-    """Uruchamia turę rozmowy, tłumacząc wyjątki na kody HTTP."""
+    """Uruchamia turę rozmowy, odwzorowując wyjątki na kody HTTP."""
     try:
         return call()
     except PendingActionError as exc:
@@ -138,7 +138,7 @@ def audit():
 
 
 def _plain_text(content: Any) -> str:
-    """Wyciąga z treści wiadomości sam tekst, pomijając bloki narzędziowe."""
+    """Zwraca tekst wiadomości z pominięciem bloków narzędziowych."""
     if isinstance(content, str):
         return content.strip()
     parts: list[str] = []

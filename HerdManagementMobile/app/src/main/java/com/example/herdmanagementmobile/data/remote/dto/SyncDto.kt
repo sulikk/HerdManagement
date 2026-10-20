@@ -4,11 +4,10 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * Odpowiedź `GET /sync/changes` — porcja zmian z backendu od ostatniej synchronizacji.
+ * Odpowiedź `GET /sync/changes` zawierająca zmiany od ostatniej synchronizacji.
  *
- * `serverTime` traktujemy jak nieprzezroczysty znacznik: zapisujemy go u siebie i
- * oddajemy nietknięty w kolejnym zapytaniu jako `since`. Dzięki temu rozjechany
- * zegar telefonu nie gubi zmian ani nie ściąga w kółko tych samych rekordów.
+ * Wartość [serverTime] jest traktowana jako nieprzezroczysty znacznik przekazywany
+ * w kolejnym zapytaniu jako `since`, co uniezależnia synchronizację od zegara urządzenia.
  */
 @Serializable
 data class SyncChangesDto(
@@ -26,7 +25,7 @@ data class SyncChangesDto(
             listings.isEmpty() && inquiries.isEmpty() && deletions.isEmpty()
 }
 
-/** Rekord usunięty na serwerze — trzeba go skasować także lokalnie. */
+/** Znacznik usunięcia rekordu po stronie serwera. */
 @Serializable
 data class DeletionDto(
     val entity: String,

@@ -38,13 +38,10 @@ class AnimalRepository @Inject constructor(
     }
 
     /**
-     * Usuwa zwierzę lokalnie (kaskadowo zdarzenia, leczenia i ogłoszenia) i kolejkuje
-     * usunięcie na serwerze.
+     * Usuwa zwierzę lokalnie (wraz z rekordami zależnymi) i kolejkuje usunięcie na serwerze.
      *
-     * Razem z nim muszą zniknąć powiązania identyfikatorów jego zdarzeń i leczeń —
-     * kaskada Room ich nie obejmuje, bo `id_mapping` nie ma klucza obcego
-     * (patrz [SyncDao.deleteChildMappingsForAnimal]). Kolejność jest istotna:
-     * po kaskadzie nie da się już ustalić, które wiersze należały do tego zwierzęcia.
+     * Mapowania identyfikatorów rekordów zależnych są usuwane przed usunięciem zwierzęcia,
+     * ponieważ nie podlegają kaskadzie (zob. [SyncDao.deleteChildMappingsForAnimal]).
      */
     suspend fun delete(id: Long) {
         syncDao.deleteChildMappingsForAnimal(id)

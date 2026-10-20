@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 
-# Nazwy encji w nagrobkach — ten sam słownik rozumie aplikacja mobilna.
+# Nazwy encji w znacznikach usunięcia, zgodne z aplikacją mobilną.
 ENTITY_ANIMAL = "animal"
 ENTITY_EVENT = "event"
 ENTITY_TREATMENT = "treatment"
@@ -14,7 +14,7 @@ ENTITY_INQUIRY = "inquiry"
 
 
 def _tombstone(db: Session, entity: str, entity_id: int) -> None:
-    """Zostawia ślad po usuniętym rekordzie dla synchronizacji przyrostowej."""
+    """Zapisuje znacznik usunięcia rekordu na potrzeby synchronizacji przyrostowej."""
     db.add(models.Deletion(entity=entity, entity_id=entity_id))
 
 
@@ -50,8 +50,8 @@ def delete_animal(db: Session, animal_id: int) -> bool:
     animal = db.get(models.Animal, animal_id)
     if animal is None:
         return False
-    # Nagrobki dzieci zapisujemy jawnie — kaskada usuwa je po cichu, a telefon
-    # musi dostać komplet identyfikatorów do skasowania u siebie.
+    # Znaczniki usunięcia rekordów zależnych są zapisywane jawnie, ponieważ usuwanie
+    # kaskadowe ich nie tworzy.
     for event in animal.events:
         _tombstone(db, ENTITY_EVENT, event.id)
     for treatment in animal.treatments:
@@ -65,8 +65,6 @@ def delete_animal(db: Session, animal_id: int) -> bool:
     db.commit()
     return True
 
-
-# --- Events -------------------------------------------------------------
 
 def list_events(db: Session, animal_id: int) -> list[models.Event]:
     return (
@@ -107,8 +105,6 @@ def delete_event(db: Session, event_id: int) -> bool:
     return True
 
 
-# --- Treatments ---------------------------------------------------------
-
 def list_treatments(db: Session, animal_id: int) -> list[models.Treatment]:
     return (
         db.query(models.Treatment)
@@ -136,8 +132,6 @@ def delete_treatment(db: Session, treatment_id: int) -> bool:
     return True
 
 
-# --- Ogłoszenia sprzedażowe (zadanie 9) ---------------------------------
-
 def list_listings(
     db: Session,
     status: models.ListingStatus | None = None,
@@ -156,10 +150,10 @@ def get_listing(db: Session, listing_id: int) -> models.Listing | None:
 
 
 def get_active_listing_for_animal(db: Session, animal_id: int) -> models.Listing | None:
-    """Ogłoszenie, które wciąż zajmuje zwierzę — szkic albo opublikowane.
+    """Zwraca aktywne ogłoszenie zwierzęcia (szkic lub opublikowane).
 
-    Jedna sztuka nie może być wystawiona dwa razy naraz; sprzedana i wycofana
-    nie blokują wystawienia jej ponownie.
+    Zwierzę może mieć tylko jedno aktywne ogłoszenie; ogłoszenia sprzedane
+    i wycofane nie blokują utworzenia nowego.
     """
     return (
         db.query(models.Listing)
@@ -184,7 +178,7 @@ def update_listing(
 ) -> models.Listing:
     for field_name, value in data.model_dump().items():
         setattr(listing, field_name, value)
-    # Treść się zmieniła, więc poprzednia odznaka przestaje cokolwiek znaczyć.
+    # Zmiana treści unieważnia odznakę weryfikacji.
     listing.irz_verified = False
     listing.irz_verified_at = None
     listing.irz_message = None
@@ -227,8 +221,6 @@ def delete_listing(db: Session, listing_id: int) -> bool:
     return True
 
 
-# --- Zapytania kupujących -----------------------------------------------
-
 def list_inquiries(db: Session, listing_id: int) -> list[models.Inquiry]:
     return (
         db.query(models.Inquiry)
@@ -258,13 +250,11 @@ def delete_inquiry(db: Session, inquiry_id: int) -> bool:
     return True
 
 
-# --- Synchronizacja przyrostowa (N5) ------------------------------------
-
 def _changed_since(db: Session, model: type, since: datetime | None) -> list:
-    """Rekordy zmienione po ``since``; ``None`` oznacza pełną migawkę.
+    """Zwraca rekordy zmienione po ``since``; ``None`` oznacza pełną migawkę.
 
-    ``COALESCE`` na wypadek wierszy sprzed dodania kolumny ``updated_at`` —
-    dla nich datą modyfikacji jest data utworzenia.
+    Dla wierszy bez wartości ``updated_at`` jako datę modyfikacji przyjmuje się
+    datę utworzenia (``COALESCE``).
     """
     query = db.query(model)
     if since is not None:
@@ -272,8 +262,7 @@ def _changed_since(db: Session, model: type, since: datetime | None) -> list:
     return query.order_by(model.id).all()
 
 
-# Tabela dla każdej encji z nagrobków — potrzebna, by rozpoznać nagrobek, który
-# przestał cokolwiek znaczyć (patrz ``_live_deletions``).
+# Model odpowiadający każdej encji ze znaczników usunięcia (zob. ``_live_deletions``).
 _ENTITY_MODELS: dict[str, type] = {
     ENTITY_ANIMAL: models.Animal,
     ENTITY_EVENT: models.Event,
@@ -284,18 +273,12 @@ _ENTITY_MODELS: dict[str, type] = {
 
 
 def _live_deletions(db: Session, deletions: list) -> list:
-    """Odsiewa nagrobki po identyfikatorach, które zostały nadane na nowo.
+    """Pomija znaczniki usunięcia dotyczące identyfikatorów nadanych ponownie.
 
-    SQLite nadaje klucz główny jako ``max(id) + 1``, więc po usunięciu wiersza jego
-    numer wraca do obiegu: nagrobek ``animal/1`` z wrzesnia i założone później
-    zwierzę o ``id = 1`` to dwa różne byty o tym samym adresie. Telefon dopasowuje
-    nagrobki po ``(encja, id)`` i nie ma jak ich rozróżnić — przy pełnej migawce
-    najpierw zapisywał świeże zwierzęta, a potem kasował je starymi nagrobkami.
-    Efekt: po reinstalacji aplikacji stado było puste, choć synchronizacja
-    raportowała sukces.
-
-    Jeśli wiersz o takim ``id`` znów istnieje, nagrobek dotyczy poprzedniego
-    właściciela numeru i nie ma go komu zgłosić — pomijamy go.
+    SQLite nadaje klucz główny jako ``max(id) + 1``, więc identyfikator usuniętego
+    wiersza może zostać ponownie wykorzystany. Aplikacja mobilna dopasowuje znaczniki
+    po parze ``(encja, id)``, dlatego znacznik, którego identyfikator należy do
+    istniejącego wiersza, jest pomijany.
     """
     live_ids: dict[str, set[int]] = {}
     result = []
@@ -312,7 +295,7 @@ def _live_deletions(db: Session, deletions: list) -> list:
 
 
 def changes_since(db: Session, since: datetime | None) -> dict[str, list]:
-    """Wszystko, co zmieniło się po ``since`` — wsad dla ``GET /sync/changes``."""
+    """Zwraca wszystkie zmiany po ``since`` na potrzeby ``GET /sync/changes``."""
     deletions = db.query(models.Deletion)
     if since is not None:
         deletions = deletions.filter(models.Deletion.deleted_at > since)

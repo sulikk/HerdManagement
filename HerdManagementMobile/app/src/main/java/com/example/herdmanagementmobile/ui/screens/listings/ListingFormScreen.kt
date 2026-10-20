@@ -32,11 +32,9 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 
 /**
- * Formularz ogłoszenia sprzedażowego (zadanie 9).
- *
- * Realizuje F13: kolczyk, nazwa i rasa przychodzą z karty zwierzęcia i nie są do
- * przepisywania — hodowca uzupełnia wyłącznie cenę i opis, który też ma już szkic.
- * Zapis tworzy **szkic**; publikacja jest osobną decyzją na karcie ogłoszenia (F12).
+ * Formularz ogłoszenia sprzedażowego. Dane zwierzęcia pochodzą z jego karty
+ * (wymaganie F13), a użytkownik uzupełnia cenę i opis. Zapis tworzy szkic;
+ * publikacja następuje na karcie ogłoszenia (wymaganie F12).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

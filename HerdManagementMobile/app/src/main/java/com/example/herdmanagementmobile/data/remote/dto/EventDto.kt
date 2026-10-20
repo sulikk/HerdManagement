@@ -23,7 +23,7 @@ data class EventDto(
     @SerialName("created_at") val createdAt: String? = null,
 )
 
-/** Body dla PATCH /events/{id}/irz. */
+/** Treść żądania `PATCH /events/{id}/irz`. */
 @Serializable
 data class IrzResultDto(
     @SerialName("irz_status") val irzStatus: String,

@@ -1,22 +1,19 @@
-"""Weryfikacja ogłoszenia wobec rejestru IRZplus — wymaganie F14.
+"""Weryfikacja ogłoszenia w rejestrze IRZplus (wymaganie F14).
 
-Odznaka „dane potwierdzone w IRZplus” ma dla kupującego znaczyć coś konkretnego:
-że kolczyk istnieje w rejestrze państwowym, nie został tam rozliczony (ubycie lub
-padnięcie) i że dane z ogłoszenia zgadzają się z tym, co widnieje w rejestrze.
-Samo istnienie zwierzęcia w ewidencji hodowcy nie wystarcza — to jego własna baza.
+Odznaka „dane potwierdzone w IRZplus” oznacza, że numer kolczyka istnieje w rejestrze,
+zwierzę nie zostało w nim rozliczone (ubycie lub padnięcie), a dane ogłoszenia są
+zgodne z danymi rejestru.
 
-Porównanie jest świadomie asymetryczne: pole puste w rejestrze nie unieważnia
-odznaki (rejestr bywa niekompletny), ale pole wypełnione **inaczej** niż w karcie
-zwierzęcia już tak. Rozbieżność jest opisywana po polsku, żeby hodowca wiedział,
-co poprawić.
+Porównanie jest asymetryczne: pole puste w rejestrze nie unieważnia odznaki, natomiast
+pole o odmiennej wartości — tak. Każda rozbieżność jest opisywana komunikatem.
 """
 from dataclasses import dataclass, field
 
 from app.irzplus.schemas import ZwierzeIndywidualneDTO
 from app.models import Animal, Sex
 
-# Słownik płci zgodny z mockiem IRZplus (`PLEC_DOZWOLONE` w app/irzplus/service.py)
-# i z mapowaniem po stronie aplikacji mobilnej (`Sex.toIrz()`).
+# Słownik płci zgodny z symulatorem IRZplus (`PLEC_DOZWOLONE` w app/irzplus/service.py)
+# oraz z mapowaniem w aplikacji mobilnej (`Sex.toIrz()`).
 SEX_TO_IRZ = {Sex.FEMALE: "samica", Sex.MALE: "samiec", Sex.OTHER: "nieokreslona"}
 
 
@@ -32,9 +29,9 @@ class VerificationResult:
 def verify_animal(animal: Animal, registry: ZwierzeIndywidualneDTO | None, closed: bool) -> VerificationResult:
     """Porównuje kartę zwierzęcia z wpisem w rejestrze IRZplus.
 
-    ``registry`` to odpowiedź rejestru (``None`` = numer nieznany), ``closed``
-    oznacza zwierzę rozliczone w rejestrze — takiego nie wolno oferować jako
-    dostępnego do sprzedaży.
+    :param registry: wpis rejestru lub ``None``, gdy numer jest nieznany.
+    :param closed: ``True``, gdy zwierzę zostało rozliczone w rejestrze i nie może
+        być przedmiotem sprzedaży.
     """
     if registry is None:
         return VerificationResult(
@@ -68,7 +65,7 @@ def verify_animal(animal: Animal, registry: ZwierzeIndywidualneDTO | None, close
 
 
 def _compare(animal: Animal, registry: ZwierzeIndywidualneDTO) -> list[str]:
-    """Lista rozbieżności; pole nieuzupełnione w rejestrze jest pomijane."""
+    """Zwraca listę rozbieżności; pola nieuzupełnione w rejestrze są pomijane."""
     found: list[str] = []
 
     if registry.dataUrodzenia and animal.birth_date and registry.dataUrodzenia != animal.birth_date:
@@ -102,5 +99,5 @@ def _compare(animal: Animal, registry: ZwierzeIndywidualneDTO) -> list[str]:
 
 
 def _same_text(left: str, right: str) -> bool:
-    """Porównanie nazw ras odporne na wielkość liter i zbędne spacje."""
+    """Porównuje teksty bez uwzględnienia wielkości liter i nadmiarowych spacji."""
     return left.strip().casefold() == right.strip().casefold()

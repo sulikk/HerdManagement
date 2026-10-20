@@ -26,24 +26,17 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Pobiera z backendu zmiany, których telefon sam nie wprowadził, i wgrywa je do Room.
+ * Pobiera z backendu zmiany wprowadzone poza urządzeniem (np. przez asystenta LLM)
+ * i zapisuje je w bazie Room, zapewniając dwukierunkowość synchronizacji.
  *
- * Bez tego kroku synchronizacja jest jednokierunkowa: aplikacja wypycha swoje wpisy,
- * ale nie widzi niczego, co powstało po drugiej stronie — a po drugiej stronie zapisuje
- * choćby asystent LLM (narzędzia `dodaj_zwierze`, `dodaj_zdarzenie`, `dodaj_leczenie`
- * działają na bazie backendu). Hodowca podejmuje decyzje na podstawie ekranu telefonu,
- * więc rozjazd między telefonem a serwerem jest błędem, nie niedogodnością.
+ * Polityka konfliktów: pobieranie rozpoczyna się wyłącznie przy pustej kolejce
+ * wysyłkowej. Do tego momentu wersja lokalna jest traktowana jako nowsza; po wysłaniu
+ * kolejki wersja serwerowa nadpisuje lokalną. Niewysłane zmiany użytkownika nie są
+ * więc nigdy tracone.
  *
- * **Polityka konfliktów.** Pobieranie rusza dopiero, gdy kolejka wysyłkowa jest pusta.
- * Dopóki cokolwiek czeka na wysłanie, lokalna wersja jest nowsza i to ona wygrywa;
- * gdy kolejka się opróżni, wersja z serwera nadpisuje lokalną. Dzięki temu nigdy nie
- * kasujemy zmiany, której użytkownik nie zdążył wypchnąć, a stan i tak się zbiega.
- *
- * **Pełna migawka** (pierwsze uruchomienie, reinstalacja, zmiana adresu serwera) nie
- * tylko dowozi rekordy, ale też uzgadnia stan w drugą stronę: lokalny rekord, który
- * ma już swój odpowiednik na serwerze, a w migawce go nie ma, został tam usunięty
- * i znika także z telefonu ([reconcile]). Bez tego kroku „zsynchronizowano” mogło
- * znaczyć „telefon i serwer pokazują dwa różne stada”.
+ * Pełna migawka (pierwsze uruchomienie, reinstalacja, zmiana adresu serwera) dodatkowo
+ * usuwa lokalne rekordy, które posiadają mapowanie na serwer, a nie występują
+ * w migawce ([reconcile]).
  */
 @Singleton
 class SyncPuller @Inject constructor(
@@ -59,7 +52,7 @@ class SyncPuller @Inject constructor(
 ) {
 
     sealed interface Result {
-        /** Kolejka wysyłkowa nie jest pusta — pobieranie odłożone do następnego razu. */
+        /** Pobieranie pominięte, ponieważ kolejka wysyłkowa nie jest pusta. */
         data object Skipped : Result
 
         data class Applied(
@@ -70,7 +63,7 @@ class SyncPuller @Inject constructor(
             val inquiries: Int,
             val deletions: Int,
             val deferred: Int,
-            /** Rekordy skasowane lokalnie, bo znikły z pełnej migawki. */
+            /** Liczba rekordów usuniętych lokalnie z powodu braku w pełnej migawce. */
             val reconciled: Int = 0,
         ) : Result {
             val total: Int
@@ -82,7 +75,7 @@ class SyncPuller @Inject constructor(
     suspend fun pull(): Result {
         if (syncDao.unsentCount() > 0) return Result.Skipped
 
-        // Znacznik wystawiony przez inny backend nie opisuje tego, co widzi ten backend.
+        // Znacznik pobrania jest ważny wyłącznie dla serwera, który go wystawił.
         syncState.bindToServer(baseUrl)
 
         val since = syncState.lastPullMarker()
@@ -94,9 +87,7 @@ class SyncPuller @Inject constructor(
         }
 
         var deferred = 0
-        // Kolejność ma znaczenie: zdarzenie, leczenie i ogłoszenie wskazują zwierzę,
-        // a zapytanie wskazuje ogłoszenie. Rodzic musi trafić do bazy (i do mapy
-        // identyfikatorów) przed dzieckiem.
+        // Rekordy nadrzędne muszą zostać zapisane (i zmapowane) przed zależnymi.
         changes.animals.forEach { applyAnimal(it) }
         changes.events.forEach { if (!applyEvent(it)) deferred++ }
         changes.treatments.forEach { if (!applyTreatment(it)) deferred++ }
@@ -106,15 +97,12 @@ class SyncPuller @Inject constructor(
         val live = liveRemoteIds(changes)
         changes.deletions.forEach { applyDeletion(it, live) }
 
-        // Uzgadniamy stan tylko wobec migawki, która cokolwiek zawiera — całkiem
-        // pusta odpowiedź na pełne pytanie to równie dobrze backend z wyczyszczoną
-        // bazą, a wtedy skasowanie lokalnych danych byłoby utratą pracy hodowcy,
-        // nie synchronizacją (pusta porcja kończy się wcześniejszym powrotem wyżej).
+        // Pusta migawka kończy działanie wcześniej, co chroni dane lokalne przed
+        // usunięciem w przypadku wyczyszczonej bazy backendu.
         val reconciled = if (fullSnapshot) reconcile(live) else 0
 
-        // Gdy czegoś nie dało się wpiąć (brak zwierzęcia-rodzica), nie przesuwamy
-        // znacznika — następne pobranie przyniesie tę porcję jeszcze raz. Zapis jest
-        // idempotentny, więc powtórka niczego nie psuje.
+        // Odroczone rekordy (brak rekordu nadrzędnego) zostaną pobrane ponownie;
+        // zapis jest idempotentny.
         if (deferred == 0) {
             syncState.saveLastPullMarker(changes.serverTime)
         }
@@ -131,7 +119,7 @@ class SyncPuller @Inject constructor(
         )
     }
 
-    /** Zdalne identyfikatory rekordów obecnych w tej porcji, po encjach. */
+    /** Zwraca zdalne identyfikatory rekordów obecnych w porcji, pogrupowane według encji. */
     private fun liveRemoteIds(changes: SyncChangesDto): Map<String, Set<Long>> = mapOf(
         SyncContract.Entity.ANIMAL to changes.animals.mapTo(mutableSetOf()) { it.id },
         SyncContract.Entity.EVENT to changes.events.mapTo(mutableSetOf()) { it.id },
@@ -141,15 +129,13 @@ class SyncPuller @Inject constructor(
     )
 
     /**
-     * Usuwa lokalne rekordy, których nie ma w pełnej migawce.
+     * Usuwa lokalne rekordy nieobecne w pełnej migawce.
      *
-     * Bierzemy pod uwagę wyłącznie rekordy z mapowaniem na zdalne id: o nich wiemy,
-     * że kiedyś były na serwerze, a teraz ich tam nie ma — czyli zostały usunięte,
-     * nawet jeśli nagrobek po nich przepadł (np. po odtworzeniu bazy backendu).
-     * Rekordów bez mapowania nie ruszamy: to wpisy, które dopiero czekają na wysłanie.
+     * Uwzględniane są wyłącznie rekordy posiadające mapowanie na identyfikator zdalny;
+     * rekordy bez mapowania oczekują na wysłanie i pozostają nienaruszone. Zwierzęta są
+     * przetwarzane jako pierwsze, ponieważ ich usunięcie kaskadowo usuwa rekordy zależne.
      *
-     * Zwierzęta idą pierwsze — w Room kasowanie zwierzęcia pociąga kaskadę na jego
-     * zdarzenia, leczenia i ogłoszenia, więc dalsze przebiegi mają mniej pracy.
+     * @return liczba usuniętych rekordów.
      */
     private suspend fun reconcile(live: Map<String, Set<Long>>): Int {
         var removed = 0
@@ -178,16 +164,12 @@ class SyncPuller @Inject constructor(
     }
 
     /**
-     * Lokalny identyfikator rekordu odpowiadającego zdalnemu — ale tylko jeśli ten
-     * wiersz nadal istnieje.
+     * Zwraca lokalny identyfikator odpowiadający [remoteId], o ile wskazywany wiersz
+     * nadal istnieje.
      *
-     * Powiązanie może wskazywać rekord, którego już nie ma (usunięty kaskadą razem ze
-     * zwierzęciem, zanim czyszczenie powiązań dzieci trafiło do aplikacji). Zapis
-     * działa w trybie REPLACE, więc użycie takiego identyfikatora nie nadpisuje
-     * niczego — ono **wskrzesza usunięty wiersz**, i to podpięty pod nowe zwierzę,
-     * bo `animalId` bierzemy z aktualnej mapy. Tak właśnie po usunięciu byka i dodaniu
-     * go od nowa wracało jego stare urodzenie. Gdy wiersza nie ma, traktujemy porcję
-     * jak nowy rekord: wstawiamy go pod nowym identyfikatorem i poprawiamy mapę.
+     * Mapowanie może wskazywać wiersz usunięty kaskadowo. Ponieważ zapis działa w trybie
+     * REPLACE, użycie takiego identyfikatora przywróciłoby usunięty rekord. W takim
+     * przypadku zwracane jest `null`, a rekord jest wstawiany pod nowym identyfikatorem.
      */
     private suspend fun <T> liveLocalId(
         entity: String,
@@ -195,15 +177,12 @@ class SyncPuller @Inject constructor(
         load: suspend (Long) -> T?,
     ): Long? = syncDao.localIdFor(entity, remoteId)?.takeIf { load(it) != null }
 
-    // --- Zwierzęta ------------------------------------------------------
-
     private suspend fun applyAnimal(dto: AnimalDto) {
         val domain = dto.toDomain()
         val mappedId = syncDao.localIdFor(SyncContract.Entity.ANIMAL, dto.id)
         val existing = mappedId?.let { animalDao.getById(it) }
-            // Zwierzę mogło powstać lokalnie i stracić mapowanie (np. po
-            // reinstalacji). Kolczyk jest unikalny, więc można je rozpoznać po nim
-            // — bez tego insert wywaliłby się na UNIQUE.
+            // Dopasowanie po unikalnym numerze kolczyka obsługuje rekordy, które
+            // utraciły mapowanie, i zapobiega naruszeniu ograniczenia UNIQUE.
             ?: animalDao.getByEarTag(dto.earTag)
 
         if (existing != null) {
@@ -215,9 +194,7 @@ class SyncPuller @Inject constructor(
         }
     }
 
-    // --- Zdarzenia ------------------------------------------------------
-
-    /** `false`, gdy nie ma jeszcze lokalnego zwierzęcia, do którego należy zdarzenie. */
+    /** @return `false`, gdy zwierzę, do którego należy zdarzenie, nie istnieje jeszcze lokalnie. */
     private suspend fun applyEvent(dto: EventDto): Boolean {
         val animalLocalId = syncDao.localIdFor(SyncContract.Entity.ANIMAL, dto.animalId)
             ?: return false
@@ -236,13 +213,11 @@ class SyncPuller @Inject constructor(
             irzMessage = domain.irzMessage,
             irzDocumentNumber = domain.irzDocumentNumber,
         )
-        // EventDao.insert działa w trybie REPLACE, więc z ustawionym id jest upsertem.
+        // Wstawienie w trybie REPLACE z ustawionym identyfikatorem działa jak upsert.
         val newId = eventDao.insert(entity)
         rememberMapping(SyncContract.Entity.EVENT, localId ?: newId, dto.id)
         return true
     }
-
-    // --- Leczenia -------------------------------------------------------
 
     private suspend fun applyTreatment(dto: TreatmentDto): Boolean {
         val animalLocalId = syncDao.localIdFor(SyncContract.Entity.ANIMAL, dto.animalId)
@@ -260,8 +235,6 @@ class SyncPuller @Inject constructor(
         return true
     }
 
-    // --- Ogłoszenia (zadanie 9) -----------------------------------------
-
     private suspend fun applyListing(dto: ListingDto): Boolean {
         val animalLocalId = syncDao.localIdFor(SyncContract.Entity.ANIMAL, dto.animalId)
             ?: return false
@@ -276,10 +249,7 @@ class SyncPuller @Inject constructor(
         return true
     }
 
-    /**
-     * Zapytania kupujących powstają wyłącznie na serwerze — to jedyna droga,
-     * którą trafiają do telefonu.
-     */
+    /** Zapisuje zapytanie kupującego; zapytania powstają wyłącznie po stronie serwera. */
     private suspend fun applyInquiry(dto: InquiryDto): Boolean {
         val listingLocalId = syncDao.localIdFor(SyncContract.Entity.LISTING, dto.listingId)
             ?: return false
@@ -294,22 +264,18 @@ class SyncPuller @Inject constructor(
         return true
     }
 
-    // --- Usunięcia ------------------------------------------------------
-
     /**
-     * Nagrobek z porcji, w której ten sam identyfikator należy już do żywego rekordu,
-     * dotyczy poprzedniego właściciela numeru — backend nadaje id usuniętych wierszy
-     * od nowa. Zastosowanie takiego nagrobka skasowałoby rekord zapisany chwilę
-     * wcześniej w tym samym przebiegu, więc go pomijamy. Backend odsiewa je u siebie,
-     * ale telefon nie może na tym polegać — równie dobrze może rozmawiać ze starszą
-     * wersją serwera.
+     * Stosuje znacznik usunięcia rekordu.
+     *
+     * Znacznik jest pomijany, jeżeli ten sam identyfikator występuje w porcji jako
+     * istniejący rekord — backend może ponownie wykorzystać identyfikatory usuniętych
+     * wierszy, więc znacznik dotyczy wówczas poprzedniego rekordu. Usunięcie zwierzęcia
+     * lub ogłoszenia kaskadowo usuwa rekordy zależne.
      */
     private suspend fun applyDeletion(dto: DeletionDto, live: Map<String, Set<Long>>) {
         if (dto.entityId in live[dto.entity].orEmpty()) return
         val localId = syncDao.localIdFor(dto.entity, dto.entityId) ?: return
         when (dto.entity) {
-            // Kasowanie zwierzęcia pociąga w Room kaskadę na zdarzenia, leczenia
-            // i ogłoszenia; kasowanie ogłoszenia — na jego zapytania.
             SyncContract.Entity.ANIMAL -> animalDao.deleteById(localId)
             SyncContract.Entity.EVENT -> eventDao.deleteById(localId)
             SyncContract.Entity.TREATMENT -> treatmentDao.deleteById(localId)

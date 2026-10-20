@@ -1,10 +1,10 @@
-"""Testy modułu publikacji ogłoszeń (zadanie 9).
+"""Testy modułu publikacji ogłoszeń.
 
-Testy są zorganizowane wokół wymagań z dokumentacji:
-F13 — formularz wstępnie wypełniony danymi z karty zwierzęcia,
-F12 — publikacja wyłącznie po jawnej decyzji,
-F14 — odznaka „dane potwierdzone w IRZplus” nadawana po porównaniu z rejestrem,
-plus zapytania kupujących i udział ogłoszeń w synchronizacji przyrostowej.
+Testy obejmują wymagania:
+F13 — wstępne wypełnienie formularza danymi z karty zwierzęcia,
+F12 — publikację wyłącznie po jawnej decyzji użytkownika,
+F14 — odznakę „dane potwierdzone w IRZplus” nadawaną po porównaniu z rejestrem,
+a także zapytania kupujących i synchronizację przyrostową ogłoszeń.
 """
 from fastapi.testclient import TestClient
 
@@ -36,7 +36,7 @@ def _listing(client: TestClient, animal_id: int, price: float = 6500.0) -> dict:
 
 
 def _registered_animal(client: TestClient, irz_store) -> dict:
-    """Zwierzę, którego dane zgadzają się z rejestrem — takie da się opublikować."""
+    """Tworzy zwierzę o danych zgodnych z rejestrem."""
     registry = irz_store.get_animal(SEED_ZWIERZE)
     return _animal(
         client,
@@ -49,15 +49,13 @@ def _registered_animal(client: TestClient, irz_store) -> dict:
 
 
 def _published_listing(client: TestClient, irz_store) -> dict:
-    """Skrót dla testów, które potrzebują ogłoszenia już widocznego dla kupujących."""
+    """Tworzy opublikowane ogłoszenie."""
     animal = _registered_animal(client, irz_store)
     listing = _listing(client, animal["id"])
     response = client.post(f"/listings/{listing['id']}/publish")
     assert response.status_code == 200, response.text
     return response.json()
 
-
-# --- F13: formularz wypełniony z karty zwierzęcia -----------------------
 
 def test_szkic_ogloszenia_bierze_dane_z_karty_zwierzecia(client: TestClient):
     animal = _animal(client)
@@ -85,8 +83,6 @@ def test_szkic_sygnalizuje_ze_zwierze_ma_juz_ogloszenie(client: TestClient):
 def test_szkic_dla_nieistniejacego_zwierzecia_to_404(client: TestClient):
     assert client.get("/animals/999/listing-draft").status_code == 404
 
-
-# --- F12: publikacja tylko po jawnej decyzji ----------------------------
 
 def test_nowe_ogloszenie_jest_szkicem_a_nie_publikacja(client: TestClient):
     animal = _animal(client)
@@ -116,10 +112,8 @@ def test_publikacja_jest_idempotentna(client: TestClient, irz_store):
     assert second["published_at"] == first["published_at"]
 
 
-# --- F14 jako warunek publikacji ----------------------------------------
-
 def test_bez_potwierdzenia_w_irz_nie_da_sie_opublikowac(client: TestClient):
-    """Odznaka jest warunkiem publikacji, a nie samą informacją dla kupującego."""
+    """Pozytywna weryfikacja w IRZplus jest warunkiem publikacji."""
     animal = _animal(client)  # kolczyk spoza rejestru
     listing = _listing(client, animal["id"])
 
@@ -130,17 +124,15 @@ def test_bez_potwierdzenia_w_irz_nie_da_sie_opublikowac(client: TestClient):
 
 
 def test_publikacja_sprawdza_rejestr_na_nowo_a_nie_stara_odznake(client: TestClient, irz_store):
-    """Sedno zgłoszonego błędu: sprzedanej sztuki nie da się wystawić ponownie.
+    """Publikacja weryfikuje rejestr ponownie zamiast polegać na zapisanej odznace.
 
-    Ogłoszenie dostaje odznakę, a dopiero potem zwierzę zostaje rozliczone
-    w rejestrze. Gdyby publikacja ufała zapisanemu znacznikowi, tę samą sztukę
-    można by wystawiać w nieskończoność.
+    Zwierzę rozliczone w rejestrze po nadaniu odznaki nie może zostać opublikowane.
     """
     animal = _registered_animal(client, irz_store)
     listing = _listing(client, animal["id"])
     assert client.post(f"/listings/{listing['id']}/verify").json()["irz_verified"] is True
 
-    irz_store.close_animal(SEED_ZWIERZE)  # zgłoszone ubycie
+    irz_store.close_animal(SEED_ZWIERZE)  # zgłoszenie ubycia
 
     response = client.post(f"/listings/{listing['id']}/publish")
     assert response.status_code == 409
@@ -156,14 +148,14 @@ def test_nieudana_publikacja_odbiera_odznake(client: TestClient, irz_store):
 
     client.post(f"/listings/{listing['id']}/publish")
 
-    # Próba publikacji zostawia aktualny stan weryfikacji, a nie stary „potwierdzone”.
+    # Próba publikacji aktualizuje wynik weryfikacji.
     current = client.get(f"/listings/{listing['id']}").json()
     assert current["irz_verified"] is False
     assert "rozliczone" in current["irz_message"]
 
 
 def test_publikacja_odswieza_odznake_bez_wczesniejszego_verify(client: TestClient, irz_store):
-    """Publikacja sama weryfikuje — hodowca nie musi klikać dwóch przycisków."""
+    """Publikacja przeprowadza weryfikację bez wcześniejszego wywołania /verify."""
     animal = _registered_animal(client, irz_store)
     listing = _listing(client, animal["id"])
     assert listing["irz_verified"] is False
@@ -198,8 +190,6 @@ def test_sprzedanego_ogloszenia_nie_da_sie_edytowac(client: TestClient, irz_stor
     assert response.status_code == 409
 
 
-# --- F14: odznaka weryfikacji wobec rejestru ----------------------------
-
 def test_zwierze_spoza_rejestru_nie_dostaje_odznaki(client: TestClient):
     animal = _animal(client)
     listing = _listing(client, animal["id"])
@@ -213,7 +203,7 @@ def test_zwierze_spoza_rejestru_nie_dostaje_odznaki(client: TestClient):
 
 
 def test_zgodne_dane_daja_odznake(client: TestClient, irz_store):
-    """Zwierzę z seedu mocka IRZplus — dane karty zgodne z rejestrem."""
+    """Zwierzę z danych początkowych symulatora IRZplus ma dane zgodne z rejestrem."""
     registry = irz_store.get_animal(SEED_ZWIERZE)
     animal = _animal(
         client,
@@ -230,7 +220,7 @@ def test_zgodne_dane_daja_odznake(client: TestClient, irz_store):
     assert data["irz_verified_at"] is not None
     assert data["discrepancies"] == []
 
-    # Odznaka jest trwała — widzi ją każdy, kto pobierze ogłoszenie.
+    # Odznaka jest zapisywana trwale w ogłoszeniu.
     assert client.get(f"/listings/{listing['id']}").json()["irz_verified"] is True
 
 
@@ -251,7 +241,7 @@ def test_rozbiezna_data_urodzenia_odbiera_odznake(client: TestClient, irz_store)
 
 
 def test_zwierze_rozliczone_w_rejestrze_nie_moze_miec_odznaki(client: TestClient, irz_store):
-    """Sztuka zgłoszona jako ubyła lub padła nie jest już przedmiotem sprzedaży."""
+    """Zwierzę rozliczone jako ubyłe lub padłe nie otrzymuje odznaki."""
     registry = irz_store.get_animal(SEED_ZWIERZE)
     animal = _animal(
         client,
@@ -284,8 +274,6 @@ def test_edycja_ogloszenia_uniewaznia_odznake(client: TestClient, irz_store):
     assert edited.status_code == 200
     assert edited.json()["irz_verified"] is False
 
-
-# --- Zapytania kupujących -----------------------------------------------
 
 def test_kupujacy_wysyla_zapytanie_do_opublikowanego_ogloszenia(client: TestClient, irz_store):
     listing = _published_listing(client, irz_store)
@@ -324,8 +312,6 @@ def test_usuniecie_ogloszenia_kasuje_zapytania(client: TestClient):
     assert client.delete(f"/listings/{listing['id']}").status_code == 204
     assert client.get(f"/listings/{listing['id']}/inquiries").status_code == 404
 
-
-# --- Udział w synchronizacji przyrostowej -------------------------------
 
 def test_ogloszenie_i_zapytanie_trafiaja_do_synchronizacji(client: TestClient, irz_store):
     animal = _registered_animal(client, irz_store)

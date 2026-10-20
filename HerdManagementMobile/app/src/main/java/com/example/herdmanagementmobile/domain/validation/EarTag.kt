@@ -1,14 +1,14 @@
 package com.example.herdmanagementmobile.domain.validation
 
 /**
- * Numer identyfikacyjny bydła: "PL" + 12 cyfr, gdzie 12 cyfr to
- * 2 cyfry numeru serii + 9 cyfr numeru zwierzęcia + cyfra kontrolna
- * (rozporządzenie MRiRW w sprawie wzorów środków identyfikacji, Dz.U. 2025 poz. 26).
+ * Walidacja numeru identyfikacyjnego bydła w formacie `PL` + 12 cyfr: 2 cyfry serii,
+ * 9 cyfr numeru zwierzęcia i cyfra kontrolna (rozporządzenie MRiRW w sprawie wzorów
+ * środków identyfikacji, Dz.U. 2025 poz. 26).
  *
- * Algorytm cyfry kontrolnej nie jest opublikowany w rozporządzeniu — ustalony
- * empirycznie na numerach z katalogów buhajów (383 numery, zgodność > 98%):
- * wagi 3,1,3,1,... dla 11 pierwszych cyfr, cyfra = (10 − suma mod 10) mod 10
- * (ten sam schemat co w kodach EAN/GTIN).
+ * Algorytm cyfry kontrolnej nie został opublikowany w rozporządzeniu; ustalono go
+ * empirycznie na próbie 383 numerów z katalogów buhajów (zgodność powyżej 98%).
+ * Stosowane są wagi 3, 1, 3, 1, … dla 11 pierwszych cyfr, a cyfra kontrolna wynosi
+ * (10 − suma mod 10) mod 10, analogicznie do kodów EAN/GTIN.
  */
 object EarTag {
     private val POLISH_FORMAT = Regex("^PL\\d{12}$")
@@ -17,17 +17,17 @@ object EarTag {
 
     fun isValidFormat(value: String): Boolean = POLISH_FORMAT.matches(value)
 
-    /** Format PL + 12 cyfr oraz poprawna cyfra kontrolna. */
+    /** Sprawdza format `PL` + 12 cyfr oraz poprawność cyfry kontrolnej. */
     fun isValid(value: String): Boolean = isValidFormat(value) && hasValidCheckDigit(value)
 
-    /** Zakłada poprawny format — dla innych wartości zwraca false. */
+    /** Sprawdza cyfrę kontrolną; dla wartości w niepoprawnym formacie zwraca `false`. */
     fun hasValidCheckDigit(value: String): Boolean {
         if (!isValidFormat(value)) return false
         val digits = value.substring(2)
         return checkDigit(digits.substring(0, 11)) == digits[11].digitToInt()
     }
 
-    /** Cyfra kontrolna dla 11 cyfr (seria + numer zwierzęcia). */
+    /** Oblicza cyfrę kontrolną dla 11 cyfr (seria i numer zwierzęcia). */
     fun checkDigit(first11Digits: String): Int {
         require(first11Digits.length == 11 && first11Digits.all { it.isDigit() }) {
             "Oczekiwano 11 cyfr, otrzymano: $first11Digits"
@@ -39,14 +39,16 @@ object EarTag {
     }
 
     /**
-     * Próbuje sparsować surową wartość z kodu kreskowego do kanonicznego formatu
-     * polskiego kolczyka urzędowego: PL + 12 cyfr. Nie sprawdza cyfry kontrolnej.
+     * Przekształca wartość odczytaną z kodu kreskowego do postaci kanonicznej `PL` + 12 cyfr.
+     * Cyfra kontrolna nie jest weryfikowana.
      *
-     * Akceptuje:
-     *  - "PL000123456784" — zwraca bez zmian
-     *  - "000123456784"  — prefiksuje "PL"
-     *  - "616000123456784" — pomija ISO-3166 numeric (616 = Polska, używane na
-     *    kolczykach radiowych) i prefiksuje "PL"
+     * Obsługiwane postacie wejściowe:
+     *  - `PL000123456784` — zwracana bez zmian,
+     *  - `000123456784` — uzupełniana o prefiks `PL`,
+     *  - `616000123456784` — numeryczny kod kraju ISO 3166 (616 = Polska), stosowany
+     *    w kolczykach elektronicznych, zastępowany prefiksem `PL`.
+     *
+     * @return numer w postaci kanonicznej lub `null`, gdy wartości nie można rozpoznać.
      */
     fun parseBarcode(raw: String?): String? {
         if (raw == null) return null

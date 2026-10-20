@@ -19,12 +19,10 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Ogłoszenia sprzedażowe (zadanie 9) w modelu offline-first.
+ * Repozytorium ogłoszeń sprzedażowych w modelu offline-first.
  *
- * Zapis idzie najpierw do Room, potem do kolejki synchronizacji — tak jak przy
- * ewidencji. Dzięki temu hodowca może przygotować ogłoszenie w oborze, bez zasięgu,
- * a wysyłka nastąpi przy pierwszym połączeniu. Wynik weryfikacji IRZplus i zapytania
- * kupujących wracają na telefon przez synchronizację pobierającą.
+ * Zmiany są zapisywane w bazie lokalnej i kolejkowane do synchronizacji. Wynik
+ * weryfikacji IRZplus oraz zapytania kupujących są pobierane synchronizacją.
  */
 @Singleton
 class ListingRepository @Inject constructor(
@@ -44,10 +42,7 @@ class ListingRepository @Inject constructor(
 
     fun observeInquiryCount(): Flow<Int> = inquiryDao.observeCount()
 
-    /**
-     * Dane do wstępnego wypełnienia formularza (F13) — z lokalnej karty zwierzęcia,
-     * więc działa też bez sieci.
-     */
+    /** Zwraca dane z lokalnej karty zwierzęcia do wstępnego wypełnienia formularza (wymaganie F13). */
     suspend fun draftFor(animalId: Long): ListingDraft? {
         val animal = animalDao.getById(animalId) ?: return null
         val existing = listingDao.getActiveForAnimal(animalId)
@@ -71,14 +66,13 @@ class ListingRepository @Inject constructor(
     }
 
     suspend fun update(listing: Listing) {
-        // Zmiana treści unieważnia odznakę — dokładnie tak samo jak po stronie
-        // backendu; inaczej telefon pokazywałby potwierdzenie starych danych.
+        // Zmiana treści unieważnia odznakę weryfikacji, zgodnie z logiką backendu.
         val edited = listing.copy(irzVerified = false, irzVerifiedAt = null, irzMessage = null)
         listingDao.update(ListingEntity.fromDomain(edited))
         syncManager.enqueueListingUpdate(edited)
     }
 
-    /** Publikacja — wymaganie F12, wołane wyłącznie po potwierdzeniu w dialogu. */
+    /** Publikuje ogłoszenie; wywoływane wyłącznie po potwierdzeniu użytkownika (wymaganie F12). */
     suspend fun publish(id: Long) = changeStatus(id, ListingStatus.PUBLISHED) {
         syncManager.enqueueListingPublish(id)
     }
@@ -91,15 +85,14 @@ class ListingRepository @Inject constructor(
         syncManager.enqueueListingSold(id)
     }
 
-    /** Zleca weryfikację wobec rejestru IRZplus; odznaka wróci synchronizacją (F14). */
+    /** Zleca weryfikację ogłoszenia w rejestrze IRZplus (wymaganie F14). */
     suspend fun requestVerification(id: Long) {
         syncManager.enqueueListingVerify(id)
     }
 
     /**
-     * Usuwa ogłoszenie lokalnie (kaskadowo jego zapytania) i kolejkuje usunięcie
-     * na serwerze. Powiązania identyfikatorów zapytań trzeba skasować ręcznie, bo
-     * `id_mapping` nie ma klucza obcego — patrz [SyncDao.deleteInquiryMappingsForListing].
+     * Usuwa ogłoszenie lokalnie (wraz z zapytaniami) i kolejkuje usunięcie na serwerze.
+     * Mapowania zapytań są usuwane jawnie (zob. [SyncDao.deleteInquiryMappingsForListing]).
      */
     suspend fun delete(id: Long) {
         syncDao.deleteInquiryMappingsForListing(id)

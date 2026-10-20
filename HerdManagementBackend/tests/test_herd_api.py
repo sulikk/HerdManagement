@@ -1,4 +1,4 @@
-"""Testy API ewidencji stada (zwierzęta, zdarzenia, leczenia) — cel synchronizacji z aplikacji."""
+"""Testy API ewidencji stada (zwierzęta, zdarzenia, leczenia)."""
 from fastapi.testclient import TestClient
 
 EAR_TAG = "PL005506613419"

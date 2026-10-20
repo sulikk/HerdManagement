@@ -95,8 +95,6 @@ fun AnimalListScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            // Pasek szukania i sortowania pokazujemy dopiero, gdy jest w czym
-            // szukać — przy pustym stadzie tylko zabierałby miejsce.
             if (state.total > 0) {
                 SearchField(
                     query = state.query,
@@ -148,8 +146,8 @@ private fun SearchField(
 }
 
 /**
- * Kryteria sortowania. Kliknięcie w aktywne odwraca kierunek, a strzałka pokazuje,
- * w którą stronę — dzięki temu nie trzeba osobnego przełącznika.
+ * Wybór kryterium sortowania. Ponowny wybór aktywnego kryterium odwraca kierunek,
+ * sygnalizowany strzałką.
  */
 @Composable
 private fun SortChips(sort: AnimalSort, onSelect: (AnimalSortField) -> Unit) {
@@ -203,10 +201,7 @@ private fun ResultCount(shown: Int, total: Int) {
     )
 }
 
-/**
- * Pozycja listy. Poza kolczykiem pokazuje imię, rasę i datę urodzenia — bez nich
- * sortowanie po rasie albo wieku nie byłoby dla patrzącego widoczne.
- */
+/** Pozycja listy zwierząt z numerem kolczyka, imieniem, rasą i datą urodzenia. */
 @Composable
 private fun AnimalRow(animal: Animal, onClick: () -> Unit) {
     ListItem(
@@ -228,12 +223,8 @@ private fun AnimalRow(animal: Animal, onClick: () -> Unit) {
 }
 
 /**
- * Stan synchronizacji; kliknięcie = „Synchronizuj teraz” (ponawia też nieudane wpisy).
- *
- * Chip mówi też o kierunku pobierania. „Zsynchronizowano” zarezerwowane jest dla
- * sytuacji, w której kolejka jest pusta **i** dane z serwera faktycznie doszły —
- * wcześniej ta sama etykieta pojawiała się przy telefonie, który nigdy nie dostał
- * z backendu ani jednego rekordu, i to ona kazała wierzyć, że stado jest kompletne.
+ * Wskaźnik stanu synchronizacji; kliknięcie wyzwala synchronizację ręczną. Stan
+ * „Zsynchronizowano” oznacza pustą kolejkę wysyłkową i udane pobranie zmian z serwera.
  */
 @Composable
 private fun SyncStatusChip(status: SyncStatus, onClick: () -> Unit) {
@@ -269,7 +260,7 @@ private fun SyncStatusChip(status: SyncStatus, onClick: () -> Unit) {
     )
 }
 
-/** Sama godzina — data ostatniego pobrania i tak jest prawie zawsze dzisiejsza. */
+/** Format godziny ostatniego pobrania zmian. */
 private val PULL_TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
 @Composable
@@ -288,7 +279,7 @@ private fun EmptyState(modifier: Modifier = Modifier) {
     }
 }
 
-/** Pusty wynik szukania to co innego niż puste stado — komunikat musi to rozróżniać. */
+/** Komunikat pustej listy, rozróżniający brak zwierząt od braku wyników wyszukiwania. */
 @Composable
 private fun NoMatches(query: String, modifier: Modifier = Modifier) {
     Box(

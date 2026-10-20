@@ -44,10 +44,7 @@ class ListingFormViewModel @Inject constructor(
         viewModelScope.launch { prefill() }
     }
 
-    /**
-     * Wymaganie F13 — pola startują z danymi karty zwierzęcia. Dane bierzemy
-     * z lokalnej bazy, więc formularz działa też bez zasięgu.
-     */
+    /** Wypełnia formularz danymi karty zwierzęcia z bazy lokalnej (wymaganie F13). */
     private suspend fun prefill() {
         val draft = repository.draftFor(animalId)
         if (draft == null) {
@@ -63,8 +60,7 @@ class ListingFormViewModel @Inject constructor(
                 breed = draft.breed,
                 description = existing?.description ?: draft.suggestedDescription,
                 price = existing?.price?.let(::formatPlainPrice).orEmpty(),
-                // Blokada dotyczy tylko zakładania nowego: backend i tak odrzuci
-                // drugie aktywne ogłoszenie tej samej sztuki.
+                // Zwierzę może mieć tylko jedno aktywne ogłoszenie.
                 blockedByExisting = listingId == null && draft.existingListingId != null,
             )
         }
@@ -77,10 +73,7 @@ class ListingFormViewModel @Inject constructor(
 
     fun dismissError() = _state.update { it.copy(error = null) }
 
-    /**
-     * Zapisuje ogłoszenie jako **szkic**. Publikacja to osobna, jawna decyzja
-     * podejmowana na karcie ogłoszenia (F12).
-     */
+    /** Zapisuje ogłoszenie jako szkic; publikacja wymaga odrębnej decyzji (wymaganie F12). */
     fun save(onSaved: (Long) -> Unit) {
         val current = _state.value
         val price = current.price.replace(',', '.').trim().toDoubleOrNull()

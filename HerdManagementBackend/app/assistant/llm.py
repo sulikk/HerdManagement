@@ -1,22 +1,20 @@
-"""Cienka warstwa nad SDK Anthropic.
+"""Warstwa dostępu do modelu językowego (SDK Anthropic).
 
-Klucz API żyje wyłącznie po stronie backendu (wymaganie N3 z dokumentacji) —
-aplikacja mobilna rozmawia tylko z tym serwerem. Protokół ``LlmClient`` pozwala
-podstawić atrapę w testach, więc pętla agentowa jest testowalna bez sieci.
+Klucz API jest przechowywany wyłącznie po stronie backendu (wymaganie N3).
+Protokół ``LlmClient`` umożliwia zastąpienie modelu atrapą w testach.
 """
 import os
 from typing import Any, Protocol
 
 from app.config import settings
 
-# Beta serwerowego fallbacku na odmowę modelu (stop_reason="refusal").
-# Domyślnie wyłączony — wymaga konta z dostępem do bety, a w domenie hodowlanej
-# odmowy praktycznie nie występują. Włącza się przez LLM_REFUSAL_FALLBACK=true.
+# Funkcja beta obsługi odmowy modelu (stop_reason="refusal") po stronie serwera.
+# Domyślnie wyłączona, ponieważ wymaga dostępu do wersji beta; włączana zmienną
+# LLM_REFUSAL_FALLBACK=true.
 REFUSAL_FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
-# Parametr output_config.effort obsluguja modele generacji Opus/Sonnet 5 i nowsze.
-# Starsze (np. claude-haiku-4-5, uzywany na czas developmentu ze wzgledu na koszt)
-# odrzucaja go bledem 400, wiec dla nich po prostu go nie wysylamy.
+# Parametr output_config.effort jest obsługiwany przez modele Opus/Sonnet 5 i nowsze.
+# Starsze modele (np. claude-haiku-4-5) odrzucają go błędem 400, dlatego jest pomijany.
 EFFORT_MODEL_PREFIXES = ("claude-opus-", "claude-sonnet-5", "claude-fable-", "claude-mythos-")
 
 
@@ -25,7 +23,7 @@ def supports_effort(model: str) -> bool:
 
 
 class AssistantUnavailable(RuntimeError):
-    """Asystent nie ma skonfigurowanego dostępu do modelu."""
+    """Brak skonfigurowanego dostępu do modelu językowego."""
 
 
 class LlmClient(Protocol):
@@ -43,7 +41,7 @@ class LlmClient(Protocol):
 
 
 def api_key() -> str:
-    """Klucz z ustawień aplikacji albo ze standardowej zmiennej środowiskowej SDK."""
+    """Zwraca klucz API z ustawień aplikacji lub ze standardowej zmiennej środowiskowej SDK."""
     return settings.llm_api_key or os.environ.get("ANTHROPIC_API_KEY", "")
 
 
@@ -55,7 +53,7 @@ class AnthropicLlm:
     """Implementacja ``LlmClient`` na oficjalnym SDK Anthropic."""
 
     def __init__(self, key: str | None = None) -> None:
-        import anthropic  # import lokalny: brak klucza nie powinien blokować startu API
+        import anthropic  # import lokalny, aby brak klucza API nie blokował uruchomienia aplikacji
 
         resolved = key or api_key()
         if not resolved:
@@ -77,8 +75,7 @@ class AnthropicLlm:
             "system": system,
             "messages": messages,
             "tools": tools,
-            # Jedno narzędzie na turę — dzięki temu zatwierdzanie akcji przez
-            # użytkownika zatrzymuje pętlę w jednoznacznym miejscu.
+            # Jedno wywołanie narzędzia na turę zapewnia jednoznaczny punkt zatwierdzenia akcji.
             "tool_choice": {"type": "auto", "disable_parallel_tool_use": True},
         }
         if supports_effort(settings.llm_model):
@@ -91,5 +88,5 @@ class AnthropicLlm:
 
 
 def build_client() -> LlmClient:
-    """Fabryka używana przez router (podmieniana w testach)."""
+    """Tworzy klienta modelu; w testach zastępowana atrapą."""
     return AnthropicLlm()
