@@ -1,4 +1,8 @@
 import java.util.Properties
+import java.net.DatagramSocket
+import java.net.Inet4Address
+import java.net.InetAddress
+import java.net.NetworkInterface
 
 plugins {
     alias(libs.plugins.android.application)
@@ -10,9 +14,39 @@ plugins {
 }
 
 /**
- * Adres backendu odczytywany z `local.properties` (klucz `herd.baseUrl`), który nie jest
- * objęty kontrolą wersji. Wartością domyślną jest 10.0.2.2 — adres hosta widziany
- * z emulatora Androida.
+ * Wykrywa adres IPv4 komputera w sieci lokalnej, przez który wychodzi ruch do internetu.
+ *
+ * Gniazdo UDP „łączone” z adresem zewnętrznym nie wysyła żadnego pakietu — system jedynie
+ * wybiera trasę, a tym samym interfejs domyślny. Dzięki temu pomijane są karty wirtualne
+ * (Hyper-V, WSL, VirtualBox), które przy zwykłym przeglądaniu interfejsów bywają pierwsze.
+ * Gdy trasy domyślnej brak, wybierany jest pierwszy aktywny adres prywatny.
+ */
+fun detectLanAddress(): String? {
+    val viaRoute = runCatching {
+        DatagramSocket().use { socket ->
+            socket.connect(InetAddress.getByName("8.8.8.8"), 80)
+            socket.localAddress
+        }
+    }.getOrNull()
+    if (viaRoute is Inet4Address && viaRoute.isSiteLocalAddress) {
+        return viaRoute.hostAddress
+    }
+    val virtual = Regex("(?i)virtual|vethernet|hyper-v|wsl|vmware|vbox|docker|loopback")
+    return NetworkInterface.getNetworkInterfaces().toList()
+        .filter { it.isUp && !it.isLoopback && !it.isVirtual && !virtual.containsMatchIn(it.displayName) }
+        .flatMap { it.inetAddresses.toList() }
+        .firstOrNull { it is Inet4Address && it.isSiteLocalAddress }
+        ?.hostAddress
+}
+
+/**
+ * Adres backendu wkompilowywany w aplikację (`BuildConfig.BASE_URL`).
+ *
+ * Kolejność ustalania:
+ * 1. klucz `herd.baseUrl` w `local.properties` (poza kontrolą wersji) — jawne nadpisanie,
+ * 2. adres IP komputera w sieci lokalnej wykrywany przy każdym budowaniu — telefon w tej
+ *    samej sieci Wi-Fi łączy się bez ręcznej konfiguracji,
+ * 3. 10.0.2.2 — adres hosta widziany z emulatora, gdy komputer nie ma połączenia z siecią.
  */
 val herdBaseUrl: String = run {
     val file = rootProject.file("local.properties")
@@ -20,8 +54,12 @@ val herdBaseUrl: String = run {
         Properties().apply { file.inputStream().use { load(it) } }.getProperty("herd.baseUrl")
     } else {
         null
+    }?.trim().orEmpty()
+    val value = when {
+        configured.isNotEmpty() && !configured.equals("auto", ignoreCase = true) -> configured
+        else -> detectLanAddress()?.let { "http://$it:8000/" } ?: "http://10.0.2.2:8000/"
     }
-    val value = configured?.trim().orEmpty().ifEmpty { "http://10.0.2.2:8000/" }
+    logger.lifecycle("HerdManagement: adres backendu = $value")
     // Retrofit wymaga adresu bazowego zakończonego ukośnikiem.
     if (value.endsWith("/")) value else "$value/"
 }
